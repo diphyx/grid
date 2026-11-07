@@ -4,7 +4,7 @@
 
 Follow the protocol below, then pass the test kit. Anything that passes works with every other grid hub and node.
 
-This page gives the picture; [`spec/SPEC.md`](https://github.com/diphyx/grid/blob/main/spec/SPEC.md) defines every byte, and [`spec/vectors.json`](https://github.com/diphyx/grid/blob/main/spec/vectors.json) has sample bytes to check an implementation against.
+This page gives the picture; [`spec/SPEC.md`](https://github.com/diphyx/grid/blob/HEAD/spec/SPEC.md) defines every byte, and [`spec/vectors.json`](https://github.com/diphyx/grid/blob/HEAD/spec/vectors.json) has sample bytes to check an implementation against.
 
 ## A Job on a Node
 
@@ -82,19 +82,35 @@ The hub always dials the node for job calls; the node dials the hub only for `be
 
 ## Test Kit
 
-The test kit checks that a hub or a node follows the protocol.
+The test kit checks that a hub or a node follows the protocol. It never looks at your code: it is the `grid` binary, talking to your running program over TCP, the way the other side would. So an implementation in any language, Node.js, Python, Rust, is tested the same way, and once it passes, it works with grid's own hub and node.
 
 | Run                 | The kit acts as | Checks                                                                |
 | ------------------- | --------------- | --------------------------------------------------------------------- |
+| `grid test vectors` | —               | prints the golden bytes, to check an encoder                          |
 | `grid test node`    | the hub         | a node: 76 checks, every call, state, event, file rule, beat and post |
 | `grid test hub`     | a node          | a hub: every frame and body it sends; that it drops its jobs          |
-| `grid test vectors` | —               | prints the golden bytes, to check an encoder                          |
 
 The exit code is the number of failed checks, up to 125; `--json` for CI.
 
+### Your Own Implementation
+
+Work in this order:
+
+1. **Bytes.** Write the encoder from the spec, and check it in your own unit tests against `spec/vectors.json`: fixed keys and the exact bytes they give (handshake, frames, envelopes). No network needed.
+2. **Talk.** Run your program and point the kit at it, as below. Each check prints pass or fail, with the section of the spec it tests.
+3. **Fix and repeat** until every check passes; then keep the kit in CI.
+
+```sh
+# your unit tests, with vectors.json
+npm test
+
+# then the kit, against your running node
+grid test node --addr 127.0.0.1 --key my-node.pub --private kit.key --slots 2 --json
+```
+
 ### A Node
 
-1. Give the node the kit cmds: copy [`pkg/kit/cmds/`](https://github.com/diphyx/grid/tree/main/pkg/kit/cmds) onto it and append `node.toml` from there to its config, with `KIT` replaced by that folder. Set `tags = ["kit"]` and `slots = 2`.
+1. Give the node the kit cmds: copy [`pkg/kit/cmds/`](https://github.com/diphyx/grid/tree/HEAD/pkg/kit/cmds) onto it and append `node.toml` from there to its config, with `KIT` replaced by that folder. Set `tags = ["kit"]` and `slots = 2`. These small scripts give known results: `fail` must end `failed`, `nap` must hit its `timeout`, `emit` must send events.
 2. Let it trust the kit: `grid key new kit`, then set the node's `[hub]` to `ip` = the kit's machine and `key` = `kit.pub`.
 3. Run:
 
@@ -102,7 +118,7 @@ The exit code is the number of failed checks, up to 125; `--json` for CI.
 grid test node --addr 10.0.0.2 --key node.pub --private kit.key --slots 2 --listen 10.0.0.1:9430
 ```
 
-`--listen` also checks `beat` and `post`: the node needs `signal = true`, and its `[hub]` `ip` and `port` set to that address (here `port = 9430`).
+The kit opens jobs, pushes, runs the kit cmds, tails, kills, pulls, and drops, and checks every answer. `--listen` also checks `beat` and `post`: the node needs `signal = true`, and its `[hub]` `ip` and `port` set to that address (here `port = 9430`).
 
 ### A Hub
 
@@ -110,4 +126,4 @@ grid test node --addr 10.0.0.2 --key node.pub --private kit.key --slots 2 --list
 grid test hub --listen 0.0.0.0:9420 --private kit.key --hub-ip 10.0.0.1 --hub-key hub.pub --for 2m
 ```
 
-Add the kit to the hub's config as a `[[nodes]]` entry (its machine's `ip`, `key = "kit.pub"`, `tags = ["kit"]`), submit jobs with `tag = "kit"` that run the kit cmds, then read the report.
+Add the kit to the hub's config as a `[[nodes]]` entry (its machine's `ip`, `key = "kit.pub"`, `tags = ["kit"]`), submit jobs with `tag = "kit"` that run the kit cmds, then read the report. When `--for` ends, it lists each call the hub made, any frame that broke the spec, and whether the hub dropped its jobs.
