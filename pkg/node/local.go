@@ -1,0 +1,151 @@
+package node
+
+import (
+	"encoding/json"
+	"errors"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
+
+	"github.com/diphyx/grid/pkg/wire"
+)
+
+// The local view: HTTP over a Unix socket, JSON, read only. The CLI reads it.
+//
+//	GET /status             Status
+//	GET /jobs               []Meta
+//	GET /history            []Entry
+//	GET /job/{id}           JobView
+//	GET /tail/{id}?after=N  JSON lines: wire.JSONEvent, until drop
+
+// Status is `grid node status`.
+type Status struct {
+	Addr   string    `json:"addr"`
+	Key    string    `json:"key"`
+	Tags   []string  `json:"tags"`
+	Slots  int       `json:"slots"`
+	Free   uint64    `json:"free"`
+	Since  time.Time `json:"since"`
+	Signal bool      `json:"signal"`
+	Hub    string    `json:"hub"`
+	Online bool      `json:"online"` // signal connection up
+}
+
+// JobView is `grid node job`.
+type JobView struct {
+	Meta
+
+	Files []wire.File `json:"files"`
+}
+
+// Status is what `grid node status` shows.
+func (node *Node) Status() Status {
+	return Status{Addr: node.Addr(), Key: node.key.Public.String(), Tags: node.config.Tags, Slots: node.config.Slots, Free: node.free(),
+		Since: node.started, Signal: node.config.Signal, Hub: wire.Addr(node.config.Hub.IP, node.config.Hub.Port), Online: node.hubOnline.Load()}
+}
+
+// ServeLocal serves the view on the config's socket until Close.
+func (node *Node) ServeLocal() error {
+	path := node.config.Socket
+	mkdirError := os.MkdirAll(filepath.Dir(path), 0o755)
+	if mkdirError != nil {
+		return mkdirError
+	}
+	removeError := os.Remove(path)
+	if removeError != nil && !errors.Is(removeError, os.ErrNotExist) {
+		return removeError
+	}
+	listener, listenError := net.Listen("unix", path)
+	if listenError != nil {
+		return listenError
+	}
+	chmodError := os.Chmod(path, 0o660)
+	if chmodError != nil {
+		return chmodError
+	}
+	go func() { <-node.stop; listener.Close() }()
+	listenError = http.Serve(listener, node.localMux())
+	if errors.Is(listenError, net.ErrClosed) {
+		return nil
+	}
+	return listenError
+}
+
+func (node *Node) localMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /status", func(writer http.ResponseWriter, request *http.Request) { writeJSON(writer, node.Status()) })
+	mux.HandleFunc("GET /jobs", func(writer http.ResponseWriter, request *http.Request) { writeJSON(writer, node.Jobs()) })
+	mux.HandleFunc("GET /history", func(writer http.ResponseWriter, request *http.Request) { writeJSON(writer, node.history.Read()) })
+	mux.HandleFunc("GET /job/{id}", func(writer http.ResponseWriter, request *http.Request) {
+		job := node.job(request.PathValue("id"))
+		if job == nil {
+			http.Error(writer, "no such job", http.StatusNotFound)
+
+			return
+		}
+		job.mutex.Lock()
+		view := JobView{Meta: job.meta}
+		entries, _ := wire.Collect(job.space, ".", 0)
+		job.mutex.Unlock()
+		view.Files = []wire.File{}
+		for _, entry := range entries {
+			if !entry.Dir && entry.Link == "" {
+				view.Files = append(view.Files, wire.File{Path: entry.Path, Size: uint64(entry.Size), Modified: uint64(entry.ModTime.UnixMilli())})
+			}
+		}
+		writeJSON(writer, view)
+	})
+	mux.HandleFunc("GET /tail/{id}", func(writer http.ResponseWriter, request *http.Request) {
+		job := node.job(request.PathValue("id"))
+		if job == nil {
+			http.Error(writer, "no such job", http.StatusNotFound)
+
+			return
+		}
+		next, _ := strconv.ParseUint(request.URL.Query().Get("after"), 10, 64)
+		writer.Header().Set("Content-Type", "application/x-ndjson")
+		enc := json.NewEncoder(writer)
+		flusher, _ := writer.(http.Flusher)
+		for {
+			job.mutex.Lock()
+			events, eventsError := job.events(next, 256)
+			dropped, changed := job.dropped, job.changed
+			job.mutex.Unlock()
+			if eventsError != nil {
+				return
+			}
+			for _, event := range events {
+				if enc.Encode(event.ToJSON()) != nil {
+					return
+				}
+				next = event.Seq
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+			if len(events) == 256 {
+				continue
+			}
+			if dropped {
+				return
+			}
+			select {
+			case <-changed:
+			case <-request.Context().Done():
+				return
+			case <-node.stop:
+				return
+			}
+		}
+	})
+
+	return mux
+}
+
+func writeJSON(writer http.ResponseWriter, value any) {
+	writer.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(writer).Encode(value)
+}
