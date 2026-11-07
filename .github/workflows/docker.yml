@@ -1,11 +1,9 @@
 name: docker
 
-# Both images, from the one Dockerfile: on main as `:main`, once test.yml passes; for a release,
-# release.yml calls this after the release, already tested, for `:1.2.3`, `:1.2` and `:latest`
-# (not for a pre-release like v1.2.3-rc.1).
+# Both images, from the one Dockerfile. release.yml calls this after the release, already
+# tested, for `:1.2.3`, `:1.2` and `:latest` (not for a pre-release like v1.2.3-rc.1); run by
+# hand on a branch, it tests first and builds `:<branch>`.
 on:
-  push:
-    branches: [main]
   workflow_call:
     inputs:
       tested:

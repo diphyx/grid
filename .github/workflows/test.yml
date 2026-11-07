@@ -1,6 +1,6 @@
 name: test
 
-# Vet and every test; release.yml and docker.yml run it first and stop if it fails.
+# Vet and every test; release.yml runs it first, and docker.yml when run by hand.
 on:
   workflow_call:
   workflow_dispatch:
