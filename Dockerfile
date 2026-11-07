@@ -13,6 +13,9 @@ FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
 
+# Set by the image workflow to the release tag; `grid version` prints it.
+ARG VERSION=dev
+
 WORKDIR /src
 
 # The module files land first, so the dependency layer only rebuilds when they change.
@@ -30,7 +33,7 @@ COPY cmd/ cmd/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w" -o /out/grid .
+    go build -trimpath -ldflags="-s -w -X github.com/diphyx/grid/cmd.VERSION=$VERSION" -o /out/grid .
 
 # Alpine over Debian: the binary is static, and cmds still get `sh` for their scripts.
 FROM alpine:3 AS base
