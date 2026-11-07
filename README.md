@@ -112,14 +112,3 @@ Each package's `doc.go` maps its files.
 | `pkg/node/` | the whole kit against the real node; restart; expiry; posts after a restart                                                   |
 | `pkg/hub/`  | a run; failover; a failed step; kill and drop; kill mid-push; a lost node; a hub restart; the hub against the kit's fake node |
 | `pkg/kit/`  | every node check against the kit's fake node; the vectors are current                                                         |
-
-| Make               | Does                                                                              |
-| ------------------ | --------------------------------------------------------------------------------- |
-| `make init`        | tidies modules, installs golangci-lint                                            |
-| `make format`      | `go fmt`                                                                          |
-| `make lint`        | golangci-lint with the [diphyx plugin](https://github.com/diphyx/golangci-plugin) |
-| `make test`        | every test, with `-race`                                                          |
-| `make run ARGS=…`  | `go run . …`                                                                      |
-| `make docs`        | the docs at http://localhost:4000                                                 |
-| `make build`       | both images, amd64 and arm64; `make push` publishes them                          |
-| `make build-local` | both images, this platform, into the local docker                                 |
