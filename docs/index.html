@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>grid · Fixed jobs on isolated machines</title>
+        <meta name="description" content="Send jobs to machines you control and get the results back: one TCP port, encrypted with a key pair on each side" />
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css" />
+        <style>
+            :root {
+                --theme-color: #42b883;
+            }
+            .sidebar-nav > ul > li > a {
+                font-weight: bold;
+            }
+            .markdown-section code {
+                border-radius: 4px;
+            }
+            .markdown-section pre {
+                border-radius: 8px;
+            }
+            .sidebar-toggle {
+                display: none;
+            }
+            .sidebar {
+                padding-top: 0;
+            }
+            .sidebar > h1.app-name {
+                margin: 0 0 20px;
+                padding: 20px 15px 20px;
+                text-align: left;
+                border-bottom: 1px solid #eee;
+            }
+            .sidebar > h1.app-name a {
+                display: block;
+                text-decoration: none;
+            }
+            .brand-name {
+                display: block;
+                font-size: 2.2rem;
+                font-weight: 800;
+                line-height: 1;
+                color: var(--theme-color);
+            }
+            .brand-tag {
+                display: block;
+                white-space: nowrap;
+                margin-top: 10px;
+                font-size: 0.9rem;
+                font-weight: 500;
+                line-height: 1.4;
+                color: #34495e;
+            }
+            .brand-meta {
+                display: block;
+                margin-top: 8px;
+                font-size: 0.75rem;
+                font-weight: 400;
+                color: #7f8c8d;
+            }
+            .markdown-section {
+                max-width: 860px;
+            }
+            .markdown-section table {
+                display: table;
+                width: 100%;
+            }
+            .markdown-section blockquote {
+                border-left-color: var(--theme-color);
+            }
+        </style>
+    </head>
+    <body>
+        <div id="app"></div>
+        <script>
+            window.$docsify = {
+                name: '<span class="brand-name">grid</span><span class="brand-tag">Fixed jobs on isolated machines</span><span class="brand-meta">secure · lightweight · portable</span>',
+                nameLink: "#/",
+                autoHeader: true,
+                loadSidebar: true,
+                subMaxLevel: 1,
+                auto2top: true,
+                relativePath: true,
+                plugins: [
+                    function (hook) {
+                        hook.doneEach(function () {
+                            var heading = document.querySelector(".markdown-section h1");
+                            var page = heading ? heading.textContent.trim() : "";
+                            document.title = page && page !== "grid" ? page + " · grid" : "grid · Fixed jobs on isolated machines";
+
+                            // mark the page's link active, also on section links (?id=)
+                            var path = location.hash.split("?")[0] || "#/";
+                            document.querySelectorAll(".sidebar-nav li").forEach(function (item) {
+                                var link = item.querySelector(":scope > a");
+                                var href = link ? link.getAttribute("href").split("?")[0] : null;
+                                item.classList.toggle("active", href === path);
+                            });
+                        });
+                    },
+                ],
+            };
+        </script>
+        <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+        <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-go.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-toml.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-json.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-yaml.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-docker.min.js"></script>
+    </body>
+</html>
