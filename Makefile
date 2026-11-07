@@ -51,3 +51,11 @@ push:
 build-local:
 	docker buildx build --target node --tag $(IMAGE)-node --load .
 	docker buildx build --target hub --tag $(IMAGE)-hub --load .
+
+# Tags a release and pushes the tag; the release and docker workflows do the rest:
+# binaries, `go install github.com/diphyx/grid@$(VERSION)`, and the images.
+.PHONY: release
+release:
+	@test -n "$(VERSION)" || (echo 'usage: make release VERSION=v1.2.3' && exit 1)
+	git tag -a $(VERSION) -m $(VERSION)
+	git push origin $(VERSION)
