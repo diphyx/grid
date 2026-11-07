@@ -38,7 +38,7 @@ Test kit:
   grid test node | hub | vectors                 grid test for the flags
 
 Version:
-  grid version                                   this binary's version
+  grid version                                   this binary's version and protocol
 
 Flags: --json for scripts, --watch for a live view, --socket PATH
 (default /run/grid/node.sock, /run/grid/hub.sock).
