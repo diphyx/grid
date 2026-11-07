@@ -4,6 +4,8 @@
 
 Follow the protocol below, then pass the test kit. Anything that passes works with every other grid hub and node.
 
+`grid/1` is the wire version: every release that speaks it works with every other. Releases are versioned on their own; a new protocol version comes only with a new major release. `grid version` prints both.
+
 This page gives the picture; [`spec/SPEC.md`](https://github.com/diphyx/grid/blob/HEAD/spec/SPEC.md) defines every byte, and [`spec/vectors.json`](https://github.com/diphyx/grid/blob/HEAD/spec/vectors.json) has sample bytes to check an implementation against.
 
 ## A Job on a Node
