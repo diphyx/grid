@@ -1,0 +1,5 @@
+#!/bin/sh
+# kit cmd: writes $2 to the file $1 and a result.json
+mkdir -p "$(dirname "$1")"
+printf '%s' "$2" > "$1"
+printf '{"ok":true}' > result.json

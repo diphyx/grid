@@ -1,0 +1,3 @@
+#!/bin/sh
+# kit cmd: sleeps $1 seconds (default 60)
+exec sleep "${1:-60}"

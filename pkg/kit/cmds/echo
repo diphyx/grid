@@ -1,0 +1,3 @@
+#!/bin/sh
+# kit cmd: prints its args on one line
+echo "$@"

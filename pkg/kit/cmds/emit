@@ -1,0 +1,5 @@
+#!/bin/sh
+# kit cmd: writes two events, one with a quoted value, and one bad line
+echo '[kit.ping] n=1 note="half way"' >> "$GRID_EVENTS"
+echo '[kit.done]' >> "$GRID_EVENTS"
+echo 'not an event' >> "$GRID_EVENTS"

@@ -1,0 +1,5 @@
+#!/bin/sh
+# kit cmd: fails with "boom" as the last stderr line
+echo "first" >&2
+echo "boom" >&2
+exit 1

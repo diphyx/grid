@@ -1,0 +1,24 @@
+# The kit cmds, for the node under test. Append to its config; KIT = the folder holding these
+# scripts. Its top-level keys need tags = ["kit"] and slots = 2.
+
+[cmds.echo]
+exec = ["KIT/echo"]
+
+[cmds.env]
+exec = ["KIT/env"]
+
+[cmds.fail]
+exec = ["KIT/fail"]
+
+[cmds.sleep]
+exec = ["KIT/sleep"]
+
+[cmds.nap]
+exec = ["KIT/sleep", "30"]
+timeout = "1s"
+
+[cmds.emit]
+exec = ["KIT/emit"]
+
+[cmds.write]
+exec = ["KIT/write"]
