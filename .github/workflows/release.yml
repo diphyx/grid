@@ -1,0 +1,45 @@
+name: release
+
+# A tag like v1.2.3 (`make release VERSION=v1.2.3`): test.yml, then a GitHub release with the
+# binaries, then the Go module proxy is warmed, so `go install github.com/diphyx/grid@v1.2.3`
+# and `@latest` work at once. The images come from docker.yml, on the same tag.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # macOS, Linux, and Windows, on amd64 and arm64, into dist/.
+      - name: Build the binaries
+        run: .github/scripts/package.sh "$TAG"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          if [[ "$TAG" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$TAG" dist/* \
+            --title "$TAG" --generate-notes --verify-tag "${flags[@]}"
+
+      - name: Warm the Go module proxy
+        run: curl -fsS "https://proxy.golang.org/github.com/diphyx/grid/@v/$TAG.info"
