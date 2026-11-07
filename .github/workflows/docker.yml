@@ -1,10 +1,10 @@
 name: docker
 
-# Both images, from the one Dockerfile, once test.yml passes: on dev as `:dev`, on a release
+# Both images, from the one Dockerfile, once test.yml passes: on main as `:main`, on a release
 # tag as `:1.2.3`, `:1.2` and `:latest` (not for a pre-release like v1.2.3-rc.1).
 on:
   push:
-    branches: [dev]
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 

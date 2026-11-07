@@ -3,7 +3,7 @@
 > Single-file, end-to-end reference for AI coding agents setting up or using grid. Reading this once gives the full model: hub, node, keys, configs, job files, CLI, Docker, events, failures, setups, and the test kit.
 
 - **Module:** `github.com/diphyx/grid` (Go 1.27); one binary, `grid`
-- **Images:** `ghcr.io/diphyx/grid-hub`, `ghcr.io/diphyx/grid-node`; tags `latest`, `1.2.3`, `1.2`, `dev`
+- **Images:** `ghcr.io/diphyx/grid-hub`, `ghcr.io/diphyx/grid-node`; tags `latest`, `1.2.3`, `1.2`, `main`
 - **Install:** `go install github.com/diphyx/grid@latest` (or `@v1.2.3`), or a binary from the GitHub releases (macOS, Linux, Windows; amd64, arm64); `grid version` prints it
 - **Protocol:** `grid/1`, port `9420`, `Noise_IK_25519_ChaChaPoly_SHA256`, CBOR; exact in `spec/SPEC.md`
 
