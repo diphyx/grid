@@ -110,6 +110,11 @@ func follow(httpClient *http.Client, id, after string, asJSON bool) string {
 		}
 		fmt.Printf("%s %5d %s  %s\n", stamp, event.Seq, prefix, text)
 	}
+	// a stream cut short is an error, not the end of the job
+	scanError := scanner.Err()
+	if scanError != nil {
+		fail(fmt.Errorf("tail: %w", scanError))
+	}
 
 	return last
 }
