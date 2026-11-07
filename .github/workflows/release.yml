@@ -1,14 +1,15 @@
 name: release
 
-# A tag like v1.2.3 (`make release VERSION=v1.2.3`): test.yml, then a GitHub release with the
-# binaries, then the Go module proxy is warmed, so `go install github.com/diphyx/grid@v1.2.3`
-# and `@latest` work at once. The images come from docker.yml, on the same tag.
+# A tag like v1.2.3 (`make release VERSION=v1.2.3`), in order: test.yml; a GitHub release with
+# the binaries, and the Go module proxy warmed, so `go install github.com/diphyx/grid@v1.2.3`
+# and `@latest` work at once; then docker.yml, so images exist only for a release that did.
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   test:
@@ -43,3 +44,9 @@ jobs:
 
       - name: Warm the Go module proxy
         run: curl -fsS "https://proxy.golang.org/github.com/diphyx/grid/@v/$TAG.info"
+
+  images:
+    needs: release
+    uses: ./.github/workflows/docker.yml
+    with:
+      tested: true

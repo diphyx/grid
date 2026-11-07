@@ -1,29 +1,36 @@
 name: docker
 
-# Both images, from the one Dockerfile, once test.yml passes: on main as `:main`, on a release
-# tag as `:1.2.3`, `:1.2` and `:latest` (not for a pre-release like v1.2.3-rc.1).
+# Both images, from the one Dockerfile: on main as `:main`, once test.yml passes; for a release,
+# release.yml calls this after the release, already tested, for `:1.2.3`, `:1.2` and `:latest`
+# (not for a pre-release like v1.2.3-rc.1).
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+  workflow_call:
+    inputs:
+      tested:
+        description: "The caller already ran test.yml"
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   test:
+    if: ${{ !inputs.tested }}
     uses: ./.github/workflows/test.yml
 
   image:
     needs: test
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     name: image (${{ matrix.target }})
     runs-on: ubuntu-latest
+    concurrency:
+      group: docker-${{ github.ref }}-${{ matrix.target }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
