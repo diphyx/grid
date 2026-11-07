@@ -3,7 +3,8 @@
 > Single-file, end-to-end reference for AI coding agents setting up or using grid. Reading this once gives the full model: hub, node, keys, configs, job files, CLI, Docker, events, failures, setups, and the test kit.
 
 - **Module:** `github.com/diphyx/grid` (Go 1.27); one binary, `grid`
-- **Images:** `ghcr.io/diphyx/grid-hub`, `ghcr.io/diphyx/grid-node`
+- **Images:** `ghcr.io/diphyx/grid-hub`, `ghcr.io/diphyx/grid-node`; tags `latest`, `1.2.3`, `1.2`, `dev`
+- **Install:** `go install github.com/diphyx/grid@latest` (or `@v1.2.3`), or a binary from the GitHub releases (macOS, Linux, Windows; amd64, arm64); `grid version` prints it
 - **Protocol:** `grid/1`, port `9420`, `Noise_IK_25519_ChaChaPoly_SHA256`, CBOR; exact in `spec/SPEC.md`
 
 ---
@@ -147,6 +148,9 @@ grid hub kill <id> | drop <id>
 
 # test kit
 grid test node | hub | vectors
+
+# this binary's version
+grid version
 ```
 
 Flags: `--json`, `--watch`. Every command but `run` talks to the daemon on the same machine.
@@ -200,7 +204,7 @@ COPY cmds/ /opt/cmds/
 | `grid test hub`     | a hub: every frame it sends; that it drops its jobs                                             |
 | `grid test vectors` | the golden bytes in `spec/vectors.json`                                                         |
 
-Exit code = failed checks, up to 125. Passing the kit makes any implementation a grid hub or node.
+Exit code = failed checks, up to 125. The kit talks to your running program over TCP, so the language does not matter: check your encoder against `spec/vectors.json` first, then point the kit at it. Passing the kit makes any implementation a grid hub or node.
 
 ## 13. Common Mistakes
 

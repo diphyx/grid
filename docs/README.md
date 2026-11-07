@@ -63,7 +63,7 @@ Drawings and config for each: [Setups](setups.md).
 
 ## Start
 
-One binary, `grid`, runs either side.
+One binary, `grid`, runs either side. Install it with Go, at `@latest` or a version like `@v1.2.3`, or take one from the [releases](https://github.com/diphyx/grid/releases): macOS, Linux, and Windows, on amd64 and arm64. The images carry the same versions, as `ghcr.io/diphyx/grid-node:1.2.3`.
 
 ```bash
 go install github.com/diphyx/grid@latest

@@ -77,7 +77,7 @@ When a step runs, the node starts its cmd:
 | `GRID_SPACE`  | the space's full path                                |
 | `GRID_EVENTS` | a file for [reporting progress](#reporting-progress) |
 
-Everything it prints on stdout and stderr goes to the hub, line by line. It runs as the node's user, in its own process group: when it ends or is stopped, whatever it started stops too. The isolation is the node itself: run nodes in containers or VMs.
+Everything it prints on stdout and stderr goes to the hub, line by line. It runs as the node's user, in its own process group: when it ends or is stopped, whatever it started stops too. On Windows a job object does the same, and stopping is immediate: there is no SIGTERM. The isolation is the node itself: run nodes in containers or VMs.
 
 ### How a Step Ends
 
