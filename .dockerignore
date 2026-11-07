@@ -1,0 +1,5 @@
+.git
+spec
+custom-gcl
+**/*.md
+**/*_test.go
