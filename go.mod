@@ -12,5 +12,5 @@ require (
 
 require github.com/x448/float16 v0.8.4 // indirect
 
-// v0.1.0 was withdrawn: its tag and release were removed, and v0.2.0 replaces it.
+// v0.1.0 was withdrawn: its tag and release were removed, and v1.0.0 replaces it.
 retract v0.1.0
