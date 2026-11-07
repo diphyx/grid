@@ -47,19 +47,22 @@ func (history *history) add(meta Meta, run Run) {
 	_, _ = history.file.Write(append(content, '\n'))
 }
 
-// Read returns the entries, oldest first.
+// Read returns the entries, oldest first; on a read error, those read until then.
 func (history *history) Read() []Entry {
 	history.mutex.Lock()
 	defer history.mutex.Unlock()
 
-	return history.readLocked()
+	entries, _ := history.readLocked()
+
+	return entries
 }
 
-// readLocked reads the file; the caller holds history.mutex.
-func (history *history) readLocked() []Entry {
+// readLocked reads the file; the caller holds history.mutex. An error means the entries
+// are not all there.
+func (history *history) readLocked() ([]Entry, error) {
 	content, readFileError := os.ReadFile(history.path)
 	if readFileError != nil {
-		return nil
+		return nil, readFileError
 	}
 	var out []Entry
 	scanner := bufio.NewScanner(bytes.NewReader(content))
@@ -71,7 +74,7 @@ func (history *history) readLocked() []Entry {
 		}
 	}
 
-	return out
+	return out, scanner.Err()
 }
 
 // prune drops entries older than keep.
@@ -83,7 +86,11 @@ func (history *history) prune() {
 	history.mutex.Lock()
 	defer history.mutex.Unlock()
 
-	entries := history.readLocked()
+	// only a whole read may be rewritten: a partial one would lose the rest
+	entries, readError := history.readLocked()
+	if readError != nil {
+		return
+	}
 	cut := time.Now().Add(-history.keep)
 	var survivors bytes.Buffer
 	kept := 0
