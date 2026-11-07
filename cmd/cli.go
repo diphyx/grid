@@ -37,12 +37,18 @@ Keys:
 Test kit:
   grid test node | hub | vectors                 grid test for the flags
 
+Version:
+  grid version                                   this binary's version
+
 Flags: --json for scripts, --watch for a live view, --socket PATH
 (default /run/grid/node.sock, /run/grid/hub.sock).
 `
 
 // Run runs `grid` with its arguments, without the program name, and returns the exit code.
 func Run(args []string) int {
+	if len(args) > 0 && (args[0] == "version" || args[0] == "--version") {
+		return printVersion()
+	}
 	if len(args) > 0 && args[0] == "test" {
 		return test(args[1:])
 	}
