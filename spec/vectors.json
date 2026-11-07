@@ -1,0 +1,79 @@
+{
+  "prologue": "grid/1",
+  "initiator": {
+    "private": "G9v0BCxsJkRMorsBQJo83PLpOAe1TmqLCGA1795hpnE=",
+    "public": "tFHToU1zMIbJctw3bZ+4j/vO+yShoaRwyPVIa/ONzi4=",
+    "ephemeral": "4c6a8811d7527e21ec328962312af8d94feaa279cd9eaea11a08f3c66d4584b2"
+  },
+  "responder": {
+    "private": "DhBOmxl5O5JHZtEIGzssexWQBDYYfVXh6pZK3f1zEeY=",
+    "public": "RC5Ai3Ik7I/KutSiFvF5FhOzyC01WibAun0p3lmrKms=",
+    "ephemeral": "712fd67c273a59dd5327def1a8a48b039854b60992bed431a5c81e961d2828bb"
+  },
+  "handshake": [
+    "0060c55e7e3bdbd123fc52c1451fd705a60888b8a39860adba05aef4f815335c9767162022c7621f25f54d635da3cb5b9f7fa6c2b8045efaca8e2d0b86b866cb07ccc80f0c7dd1673ec42fb1dea985d7f7c2d1c3cdaed38253f35a8bba5a2ea26aee",
+    "00304f329f6ba74d0d9e10dca9604b42567558e5ddeafa35124d4f1910f4802bfc3315688257b1d0f9b2d28a40dca491bdfe"
+  ],
+  "transport": [
+    {
+      "from": "initiator",
+      "plain": "a36269640164626f6479a1636a6f62782039643736666539613632366266396139363631386638623837643563323038666463616c6c6473746174",
+      "frame": "004bc95f63563375ee44a38f3aa2dbf2a83a3cdef5d9e4ac40ddc44216bbf1be5432bc9bf5794d9ee4fb60460b5b27d19b532aa6fc8034b6ab416be2e9349159f8c99c58ce4a64c56b81e03055"
+    },
+    {
+      "from": "responder",
+      "plain": "a262696401626f6ba16573746174656469646c65",
+      "frame": "00245cf518e5915c80818971476737c907b96b9ac03ff24bcb3be618db800aa1f893cc2e925b"
+    }
+  ],
+  "envelopes": [
+    {
+      "name": "call open",
+      "cbor": "a36269640164626f6479a163746167656275696c646463616c6c646f70656e"
+    },
+    {
+      "name": "ok open",
+      "cbor": "a262696401626f6ba2636a6f627820396437366665396136323662663961393636313866386238376435633230386667657870697265731a000927c0"
+    },
+    {
+      "name": "call exec",
+      "cbor": "a36269640264626f6479a463636d64656275696c6463656e76a162434365636c616e67636a6f6278203964373666653961363236626639613936363138663862383764356332303866646172677381656c696e75786463616c6c6465786563"
+    },
+    {
+      "name": "ok empty",
+      "cbor": "a262696402626f6ba0"
+    },
+    {
+      "name": "reject",
+      "cbor": "a2626964036672656a656374a266726561736f6e6772756e6e696e67676d6573736167656d616e2065786563206973206f6e"
+    },
+    {
+      "name": "data event",
+      "cbor": "a2626964046464617461a463736571016464617461a2646c696e656568656c6c6f6673747265616d636f75746474696d651b0000018bcfe568006474797065636c6f67"
+    },
+    {
+      "name": "data bytes",
+      "cbor": "a2626964056464617461456368756e6b"
+    },
+    {
+      "name": "data push offset",
+      "cbor": "a2626964056464617461a1666f666673657400"
+    },
+    {
+      "name": "end pull",
+      "cbor": "a26269640663656e64a1667368613235365820e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "cancel",
+      "cbor": "a2626964046663616e63656ca0"
+    },
+    {
+      "name": "ping",
+      "cbor": "a16470696e67a0"
+    },
+    {
+      "name": "pong",
+      "cbor": "a164706f6e67a0"
+    }
+  ]
+}
