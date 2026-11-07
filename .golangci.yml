@@ -1,0 +1,21 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - diphyx
+  settings:
+    custom:
+      diphyx:
+        type: module
+        description: diphyx code style rules
+  exclusions:
+    rules:
+      # Closing, printing to the terminal, and flushing it are best effort.
+      - linters: [errcheck]
+        text: "Error return value of `[^`]*\\.(Close|Fprint|Fprintf|Fprintln|Flush)` is not checked"
+      # Tests fail on the checks they make, not on cleanup.
+      - linters: [errcheck]
+        path: _test\.go

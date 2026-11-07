@@ -1,0 +1,8 @@
+# Builds ./custom-gcl: golangci-lint with the diphyx plugin compiled in.
+# Run: make lint
+version: v2.15.0
+name: custom-gcl
+destination: .
+plugins:
+  - module: github.com/diphyx/golangci-plugin
+    version: v1.3.0
