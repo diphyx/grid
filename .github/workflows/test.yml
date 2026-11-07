@@ -1,0 +1,31 @@
+name: test
+
+# Vet and every test; release.yml and docker.yml run it first and stop if it fails.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      # The Windows build differs only in pkg/node/group_windows.go; vet it too.
+      - name: Vet for Windows
+        env:
+          GOOS: windows
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
