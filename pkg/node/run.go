@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -25,6 +24,7 @@ const (
 // proc is a running exec.
 type proc struct {
 	command *exec.Cmd
+	group   *group      // the cmd and whatever it starts
 	stop    chan string // closed to stop it
 	stopped string      // why, set before stop closes: kill, timeout, drop
 	once    sync.Once
@@ -50,7 +50,7 @@ func (node *Node) start(job *Job, body wire.Exec, def Cmd) {
 	}
 	env = append(env, "GRID_JOB="+job.ID(), "GRID_SPACE="+command.Dir, "GRID_EVENTS="+own)
 	command.Env = env
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	prepareGroup(command)
 
 	run := Run{Cmd: body.Cmd, State: wire.STATE_RUNNING, Start: time.Now()}
 	job.meta.Runs = append(job.meta.Runs, run)
@@ -62,7 +62,7 @@ func (node *Node) start(job *Job, body wire.Exec, def Cmd) {
 
 		return
 	}
-	process := &proc{command: command, stop: make(chan string)}
+	process := &proc{command: command, group: startGroup(command), stop: make(chan string)}
 	job.proc = process
 	node.running.Add(1)
 	go node.watch(job, body.Cmd, def.Timeout.D(), process, pipes, own)
@@ -110,11 +110,11 @@ func closeAll(lists ...[]*os.File) {
 }
 
 func (node *Node) watch(job *Job, name string, timeout time.Duration, process *proc, pipes [2]*os.File, own string) {
-	var group sync.WaitGroup
+	var readers sync.WaitGroup
 	var lastErr string
 	var lmu sync.Mutex
 	logLines := func(source io.Reader, stream string) {
-		defer group.Done()
+		defer readers.Done()
 
 		readLines(source, func(text string) {
 			job.mutex.Lock()
@@ -127,7 +127,7 @@ func (node *Node) watch(job *Job, name string, timeout time.Duration, process *p
 			}
 		})
 	}
-	group.Add(2)
+	readers.Add(2)
 	go logLines(pipes[0], "out")
 	go logLines(pipes[1], "err")
 
@@ -160,22 +160,23 @@ func (node *Node) watch(job *Job, name string, timeout time.Duration, process *p
 	case <-process.stop:
 		stopped = process.stopped
 	}
-	processGroup := -process.command.Process.Pid
+	defer process.group.close()
+
 	if stopped != "" {
-		_ = syscall.Kill(processGroup, syscall.SIGTERM)
+		process.group.terminate()
 		select {
 		case problem = <-exited:
 		case <-time.After(KILL_WAIT):
-			_ = syscall.Kill(processGroup, syscall.SIGKILL)
+			process.group.kill()
 			problem = <-exited
 		}
 	}
 	// the cmd has exited: whatever it left running in its group goes too (the group's id is
 	// not reused while any of it lives), then its output drains
-	_ = syscall.Kill(processGroup, syscall.SIGKILL)
+	process.group.kill()
 	drained := make(chan struct{})
 	go func() {
-		group.Wait()
+		readers.Wait()
 		close(drained)
 	}()
 	select {
