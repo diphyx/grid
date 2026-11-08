@@ -123,6 +123,11 @@ func Extract(file io.ReadSeeker, root *os.Root, base string) ([]byte, error) {
 // Collect lists the entries under p in root, sorted (§10); since > 0 keeps only files
 // modified after it, in unix ms. A missing path gives none.
 func Collect(root *os.Root, path string, since uint64) ([]Entry, error) {
+	return CollectSkip(root, path, since, nil)
+}
+
+// CollectSkip is Collect, leaving out the paths in skip, and what is under them.
+func CollectSkip(root *os.Root, path string, since uint64, skip map[string]bool) ([]Entry, error) {
 	_, lstatError := root.Lstat(path)
 	if errors.Is(lstatError, fs.ErrNotExist) {
 		return nil, nil
@@ -135,6 +140,13 @@ func Collect(root *os.Root, path string, since uint64) ([]Entry, error) {
 			return problem
 		}
 		if name == "." {
+			return nil
+		}
+		if skip[filepath.ToSlash(name)] {
+			if dirEntry.IsDir() {
+				return fs.SkipDir
+			}
+
 			return nil
 		}
 		info, lstatError := root.Lstat(name)
