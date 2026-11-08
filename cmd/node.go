@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,7 +15,9 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/diphyx/grid/pkg/history"
 	"github.com/diphyx/grid/pkg/node"
+	"github.com/diphyx/grid/pkg/wire"
 )
 
 // runNode is the node daemon.
@@ -91,9 +94,10 @@ func show(httpClient *http.Client, command string, options flags, out io.Writer)
 	case "jobs":
 		{
 			value = &[]node.Meta{}
-			if options.history {
-				path, value = "/history", &[]node.Entry{}
-			}
+		}
+	case "history":
+		{
+			path, value = "/history?kind="+url.QueryEscape(options.kind), &[]history.Entry{}
 		}
 	case "job":
 		{
@@ -120,8 +124,12 @@ func show(httpClient *http.Client, command string, options flags, out io.Writer)
 			if typed.Signal {
 				hub = typed.Hub + "  " + map[bool]string{true: "connected", false: "not connected"}[typed.Online]
 			}
-			fmt.Fprintf(writer, "addr\t%s\nkey\t%s\ntags\t%s\nslots\t%d free of %d\nup\t%s\nhub\t%s\n",
-				typed.Addr, typed.Key, strings.Join(typed.Tags, " "), typed.Free, typed.Slots, strings.TrimSuffix(ago(typed.Since), " ago"), hub)
+			share := "off"
+			if typed.Share.Limit > 0 {
+				share = fmt.Sprintf("%d, %s of %s", typed.Share.Shares, wire.Size{Bytes: typed.Share.Used}, wire.Size{Bytes: typed.Share.Limit})
+			}
+			fmt.Fprintf(writer, "addr\t%s\nkey\t%s\ntags\t%s\njobs\t%d free of %d\nshare\t%s\nup\t%s\nhub\t%s\n",
+				typed.Addr, typed.Key, strings.Join(typed.Tags, " "), typed.Free, typed.Limit, share, strings.TrimSuffix(ago(typed.Since), " ago"), hub)
 		}
 	case *[]node.Meta:
 		{
@@ -130,13 +138,9 @@ func show(httpClient *http.Client, command string, options flags, out io.Writer)
 				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n", meta.ID, meta.Tag, dash(meta.State.Cmd), meta.State.State, ago(meta.Opened), ago(meta.Used))
 			}
 		}
-	case *[]node.Entry:
+	case *[]history.Entry:
 		{
-			fmt.Fprintln(writer, "JOB\tTAG\tCMD\tSTATE\tSTART\tTOOK\tMESSAGE")
-			for _, entry := range *typed {
-				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", entry.Job, entry.Tag, dash(entry.Cmd), entry.State,
-					entry.Start.Local().Format("2006-01-02 15:04:05"), entry.End.Sub(entry.Start).Round(time.Millisecond), entry.Message)
-			}
+			writeHistory(writer, *typed)
 		}
 	case *node.JobView:
 		{

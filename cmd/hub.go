@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/diphyx/grid/pkg/history"
 	"github.com/diphyx/grid/pkg/hub"
 	"github.com/diphyx/grid/pkg/wire"
 )
@@ -32,7 +34,7 @@ func hubMain(command string, options flags) int {
 		{
 			return submit(options)
 		}
-	case "status", "nodes", "jobs", "job":
+	case "status", "nodes", "jobs", "job", "history":
 		{
 			hubView(command, options)
 		}
@@ -90,7 +92,8 @@ func runHub(options flags) {
 	}
 }
 
-// submit sends a job file; push paths are relative to the file's folder and packed here.
+// submit sends a job file; push paths are relative to the file's folder and packed here,
+// unless the hub has them already, by their manifest; --repack packs them all again.
 func submit(options flags) int {
 	if len(options.pos) != 1 {
 		fail(errors.New("submit: needs a job file"))
@@ -114,12 +117,25 @@ func submit(options flags) int {
 	if encodeError != nil {
 		fail(encodeError)
 	}
+	httpClient := client(options.socket)
 	for i, push := range job.Push {
 		from := push.From
 		if !filepath.IsAbs(from) {
 			from = filepath.Join(base, from)
 		}
-		pushPart, pushError := writer.CreateFormFile("push", fmt.Sprintf("%d.tar", i))
+		manifest, manifestError := hub.Manifest(from)
+		if manifestError != nil {
+			fail(fmt.Errorf("push[%d] %s: %w", i, push.From, manifestError))
+		}
+		if !options.repack && isStored(httpClient, manifest) {
+			storedError := writer.WriteField("stored", manifest)
+			if storedError != nil {
+				fail(storedError)
+			}
+
+			continue
+		}
+		pushPart, pushError := writer.CreateFormFile("push", manifest)
 		if pushError != nil {
 			fail(pushError)
 		}
@@ -132,7 +148,6 @@ func submit(options flags) int {
 	if closeError != nil {
 		fail(closeError)
 	}
-	httpClient := client(options.socket)
 	response, postError := httpClient.Post("http://grid/jobs", writer.FormDataContentType(), &body)
 	if postError != nil {
 		fail(fmt.Errorf("daemon not reachable: %w", postError))
@@ -161,6 +176,15 @@ func submit(options flags) int {
 	}
 
 	return 1
+}
+
+// isStored asks the hub whether it has a tar for a source with that manifest.
+func isStored(httpClient *http.Client, manifest string) bool {
+	var answer struct {
+		Stored bool `json:"stored"`
+	}
+
+	return get(httpClient, "/stored/"+manifest, &answer) == nil && answer.Stored
 }
 
 // post calls kill or drop.
@@ -264,6 +288,10 @@ func showHub(httpClient *http.Client, command string, options flags, out io.Writ
 		{
 			path, value = "/job/"+options.pos[0], &hub.JobView{}
 		}
+	case "history":
+		{
+			path, value = "/history?kind="+url.QueryEscape(options.kind), &[]history.Entry{}
+		}
 	}
 	getError := get(httpClient, path, value)
 	if getError != nil {
@@ -290,7 +318,7 @@ func showHub(httpClient *http.Client, command string, options flags, out io.Writ
 		}
 	case *[]hub.NodeView:
 		{
-			fmt.Fprintln(writer, "NODE\tTAGS\tSTATE\tFREE\tRUNNING\tLAST SEEN")
+			fmt.Fprintln(writer, "NODE\tTAGS\tSTATE\tSHARE\tFREE\tRUNNING\tLAST SEEN")
 			for _, view := range *typed {
 				state := "offline"
 				switch {
@@ -307,19 +335,21 @@ func showHub(httpClient *http.Client, command string, options flags, out io.Writ
 				if view.Free != nil {
 					free = fmt.Sprint(*view.Free)
 				}
-				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%d\t%s\n", view.Addr, strings.Join(view.Tags, " "), state, free, view.Running, ago(view.LastSeen))
+				share := map[bool]string{true: "on", false: "off"}[view.Share]
+				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%d\t%s\n", view.Addr, strings.Join(view.Tags, " "), state, share, free, view.Running, ago(view.LastSeen))
 			}
 		}
 	case *[]hub.Record:
 		{
 			fmt.Fprintln(writer, "JOB\tTAG\tSTATE\tSTEP\tNODE\tSUBMITTED\tMESSAGE")
 			for _, record := range *typed {
-				if record.IsFinished() != options.history {
-					continue
-				}
 				step := fmt.Sprintf("%d/%d", min(record.Step+1, len(record.Steps)), len(record.Steps))
 				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", record.ID, record.Job.Tag, record.State, step, dash(record.Node), ago(record.Submitted), record.Message)
 			}
+		}
+	case *[]history.Entry:
+		{
+			writeHistory(writer, *typed)
 		}
 	case *hub.JobView:
 		{

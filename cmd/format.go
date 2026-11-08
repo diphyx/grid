@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"time"
+
+	"github.com/diphyx/grid/pkg/history"
 )
 
 func ago(at time.Time) string {
@@ -26,6 +29,18 @@ func ago(at time.Time) string {
 	}
 
 	return at.Local().Format("2006-01-02 15:04")
+}
+
+// writeHistory prints history entries, one a line.
+func writeHistory(writer io.Writer, entries []history.Entry) {
+	fmt.Fprintln(writer, "AT\tKIND\tEVENT\tSUBJECT\tTOOK\tMESSAGE")
+	for _, entry := range entries {
+		took := "-"
+		if entry.Took > 0 {
+			took = entry.Took.Round(time.Millisecond).String()
+		}
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n", entry.At.Local().Format("2006-01-02 15:04:05"), entry.Kind, entry.Event, dash(entry.Subject), took, entry.Message)
+	}
 }
 
 func dash(text string) string {

@@ -13,22 +13,24 @@ const USAGE = `grid: the hub and node daemons, their CLI, keys, and the test kit
 
 Node:
   grid node run [--config /etc/grid/node.toml]   the node daemon
-  grid node status                               tags, slots, uptime, hub connected
-  grid node jobs [--history]                     current or past jobs
+  grid node status                               tags, jobs, share, uptime, hub connected
+  grid node jobs                                 open jobs
   grid node job <id>                             one job: cmds, files, state, times
   grid node tail <id> [--after N]                follow a job's events
+  grid node history [--kind K]                   the event log: job, share, node, hub
 
 Hub:
   grid hub run [--config /etc/grid/hub.toml]     the hub daemon
-  grid hub submit <job.toml> [--wait]            send a job; prints its id
+  grid hub submit <job.toml> [--wait] [--repack] send a job; prints its id
   grid hub status                                key, signal, nodes online, jobs by state
-  grid hub nodes                                 every node: tags, online or lost, free, running
-  grid hub jobs [--history]                      current or past jobs
+  grid hub nodes                                 every node: tags, online or lost, share, free
+  grid hub jobs                                  every job it keeps
   grid hub job <id>                              one job: node, steps, state, files
   grid hub tail <id> [--after N]                 follow a job's events
   grid hub pull <id> <dir>                       copy a job's pulled files out
   grid hub kill <id>                             stop a running job
   grid hub drop <id>                             forget a job and its files
+  grid hub history [--kind K]                    the event log: job, node, hub
 
 Keys:
   grid key new <name>                            write <name>.key (0600) and <name>.pub
@@ -70,7 +72,7 @@ func Run(args []string) int {
 		{
 			runNode(options)
 		}
-	case "status", "jobs", "job", "tail":
+	case "status", "jobs", "job", "tail", "history":
 		{
 			view(command, options)
 		}
@@ -86,14 +88,15 @@ func Run(args []string) int {
 }
 
 type flags struct {
-	pos     []string
-	config  string
-	socket  string
-	json    bool
-	watch   bool
-	history bool
-	wait    bool
-	after   string
+	pos    []string
+	config string
+	socket string
+	json   bool
+	watch  bool
+	wait   bool
+	repack bool
+	after  string
+	kind   string
 }
 
 // parse reads flags anywhere among the args.
@@ -139,9 +142,13 @@ func parse(args []string, config, socket string) flags {
 			{
 				options.watch = true
 			}
-		case "history":
+		case "kind":
 			{
-				options.history = true
+				options.kind = val()
+			}
+		case "repack":
+			{
+				options.repack = true
 			}
 		case "wait":
 			{
