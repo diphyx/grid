@@ -2,7 +2,8 @@ name: release
 
 # A tag like v1.2.3 (`make release VERSION=v1.2.3`), in order: test.yml; a GitHub release with
 # the binaries, and the Go module proxy warmed, so `go install github.com/diphyx/grid@v1.2.3`
-# and `@latest` work at once; then docker.yml, so images exist only for a release that did.
+# and `@latest` work at once; then the Homebrew formula in diphyx/homebrew-tap, and docker.yml,
+# so images exist only for a release that did.
 on:
   push:
     tags: ["v*"]
@@ -44,6 +45,42 @@ jobs:
 
       - name: Warm the Go module proxy
         run: curl -fsS "https://proxy.golang.org/github.com/diphyx/grid/@v/$TAG.info"
+
+  # `brew install diphyx/tap/grid`: rewrites Formula/grid.rb in diphyx/homebrew-tap from the
+  # release's checksums.txt. Prereleases are skipped; TAP_TOKEN is a fine-grained token with
+  # Contents read and write on that repo, since github.token reaches only this one.
+  tap:
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/checkout@v5
+        with:
+          repository: diphyx/homebrew-tap
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+
+      - name: Write the formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$TAG" --pattern checksums.txt --dir /tmp
+          mkdir -p tap/Formula
+          .github/scripts/formula.sh "$TAG" /tmp/checksums.txt > tap/Formula/grid.rb
+
+      - name: Push the formula
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/grid.rb
+          git diff --cached --quiet && exit 0
+          git commit -m "grid $TAG"
+          git push
 
   images:
     needs: release

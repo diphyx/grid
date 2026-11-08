@@ -61,13 +61,29 @@ The same protocol works in every setup; only the IPs and what you open change.
 
 Drawings and config for each: [Setups](setups.md).
 
-## Start
+## Install
 
-One binary, `grid`, runs either side. Install it with Go, at `@latest` or a version like `@v1.2.3`, or take one from the [releases](https://github.com/diphyx/grid/releases): macOS, Linux, and Windows, on amd64 and arm64. The images carry the same versions, as `ghcr.io/diphyx/grid-node:1.2.3`.
+One binary, `grid`, runs either side, on macOS, Linux, and Windows, amd64 and arm64:
+
+| With                                                         | Command                                    | Updates                             |
+| ------------------------------------------------------------ | ------------------------------------------ | ----------------------------------- |
+| Homebrew (macOS, Linux)                                      | `brew install diphyx/tap/grid`             | `brew upgrade grid`                 |
+| Go                                                           | `go install github.com/diphyx/grid@latest` | the same again, or `@v1.2.3` to pin |
+| a [release](https://github.com/diphyx/grid/releases) archive | unpack it and put `grid` on your `PATH`    | a newer archive                     |
+| Docker                                                       | `ghcr.io/diphyx/grid-hub`, `grid-node`     | tags `latest`, `1.2.3`, `1.2`       |
+
+Check it with `grid version`, which prints the release and the protocol it speaks:
 
 ```bash
-go install github.com/diphyx/grid@latest
+grid version
+# grid v1.2.3 (protocol grid/1)
+```
 
+## Start
+
+Each side makes its own key pair:
+
+```bash
 # on the hub: hub.key (0600) and hub.pub; never overwrites
 grid key new /etc/grid/hub
 
