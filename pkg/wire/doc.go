@@ -11,4 +11,5 @@
 //	fs.go        §10 tar streams to and from a folder (os.Root)
 //	eventlog.go  a job's events on disk, numbered by seq
 //	duration.go  config durations: 10m, 30d, 0
+//	size.go      config sizes: 512MB, 10GB, 0
 package wire
