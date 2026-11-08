@@ -42,7 +42,7 @@ You have machines that should do certain work for you: build, test, render, trai
 A **job** is a request, not code: it picks from the node's **cmds**, pushes your files in, runs those cmds on them, and pulls the results back. The [Job](job.md) page shows how.
 
 1. You submit a job to the hub.
-2. The hub picks a node that offers the job's **tag** (a kind of work, like `build`) and has a free **slot** (room for one more job).
+2. The hub picks a node that offers the job's **tag** (a kind of work, like `build`) and has room for one more job, under its `[jobs] limit`.
 3. The node makes a **space**, the job's own folder, and the hub pushes the files in.
 4. The node runs the job's **steps**, its chosen cmds, one after another, sending each line of output as it goes.
 5. The hub pulls the files back, and the node deletes the space.

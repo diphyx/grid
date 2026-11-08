@@ -39,14 +39,14 @@ The hub and its nodes run as containers on one Docker network. Each container ha
 [[nodes]]
 ip = "172.30.0.5"
 tags = ["build"]
-key = "/etc/grid/node-a.pub"
+trust = "/etc/grid/node-a.pub"
 ```
 
 ```toml
 # node.toml: the hub by its container IP
 [hub]
 ip = "172.30.0.10"
-key = "/etc/grid/hub.pub"
+trust = "/etc/grid/hub.pub"
 ```
 
 **Open:** nothing. The containers reach each other on the Docker network.
@@ -109,7 +109,7 @@ The hub and the nodes are machines on one private network: an office LAN, or a c
 │   ┌────────────────┐  ┌────────────────┐  ┌────────────────┐   │
 │   │ node-1         │  │ node-2         │  │ gpu-1          │   │
 │   │ 10.0.0.2       │  │ 10.0.0.3       │  │ 10.0.0.9       │   │
-│   │ build, 4 slots │  │ build, 4 slots │  │ gpu            │   │
+│   │ build, limit 4 │  │ build, limit 4 │  │ gpu            │   │
 │   └────────────────┘  └────────────────┘  └────────────────┘   │
 │                                                                │
 └────────────────────────────────────────────────────────────────┘
@@ -122,7 +122,7 @@ The hub and the nodes are machines on one private network: an office LAN, or a c
 [[nodes]]
 ip = "10.0.0.2"
 tags = ["build"]
-key = "/etc/grid/node-1.pub"
+trust = "/etc/grid/node-1.pub"
 ```
 
 | On        | Open TCP `9420` to                          |
@@ -158,7 +158,7 @@ internet  ▼                              ▼
 [[nodes]]
 ip = "18.1.2.3"
 tags = ["build"]
-key = "/etc/grid/node-eu.pub"
+trust = "/etc/grid/node-eu.pub"
 ```
 
 | On        | Open TCP `9420` to                                        |

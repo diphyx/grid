@@ -11,7 +11,7 @@
 
 ## 1. Mental Model
 
-grid sends jobs to machines and brings the results back. What a node can run is fixed by the node: its config defines named **cmds**. A **job** is a TOML file that pushes files in, runs some of those cmds as steps (it can only add `args` and `env`, never new commands), and pulls files back. The **hub** takes the job, picks a **node** that offers the job's **tag** and has a free **slot**, and runs it there in a **space** (the job's own folder).
+grid sends jobs to machines and brings the results back. What a node can run is fixed by the node: its config defines named **cmds**. A **job** is a TOML file that pushes files in, runs some of those cmds as steps (it can only add `args` and `env`, never new commands), and pulls files back. The **hub** takes the job, picks a **node** that offers the job's **tag** and has room under its `[jobs] limit`, and runs it there in a **space** (the job's own folder).
 
 ```
 job file (TOML) → hub → node that offers the job's tag
@@ -29,7 +29,7 @@ job file (TOML) → hub → node that offers the job's tag
 | cmd   | a command the node defines under a name; a job can run only these, adding `args`/`env`    |
 | step  | one cmd run inside a job, with its own `args` and `env`                                   |
 | space | the job's folder on the node                                                              |
-| slot  | room for one job on a node                                                                |
+| share | a push a node keeps for later jobs, read only, linked into their spaces                   |
 
 ## 2. Keys
 
@@ -46,25 +46,36 @@ grid key pub /etc/grid/hub.key
 
 - Raw X25519, 32 bytes, base64 (44 chars); not SSH keys. Make them with `grid key new`.
 - Each side holds the **other** side's public key, always, with or without `signal`: the hub needs it to dial the node; the node accepts only the hub's key. A `.key` never leaves its machine.
-- In configs, `key` is the public key itself or a path to its file; `private` is a path only.
+- In configs, `identity` is your own private key, a path only; `trust` is the other side's public key, itself or a path to its file.
 - `grid key new` refuses to overwrite.
 
 ## 3. Node Config — `/etc/grid/node.toml`
 
 ```toml
-private = "/etc/grid/node.key"   # required
+identity = "/etc/grid/node.key"  # required
 tags = ["build"]                 # required
-slots = 4                        # default 1
-expires = "10m"                  # idle job cleanup; "0" = never (default)
-history = "30d"                  # "0" = forever (default)
 signal = true                    # send beat + state changes to the hub; default false
 port = 9420                      # default
-data = "/var/lib/grid"           # default
 
 [hub]                            # required: who may call this node
 ip = "10.0.0.1"
-key = "/etc/grid/hub.pub"
+trust = "/etc/grid/hub.pub"
 port = 9420                      # where the hub listens, with signal
+
+[jobs]
+path = "/var/lib/grid/node/jobs" # default
+limit = 4                        # jobs at once; default 1
+expires = "10m"                  # idle job cleanup; "0" = never (default)
+
+[history]                        # the event log: job, share, node, hub
+path = "/var/lib/grid/node/history"
+limit = "100MB"                  # default; "0" = off
+expires = "30d"                  # "0" = never (default)
+
+[share]                          # share pushes, kept for the jobs after
+path = "/var/lib/grid/node/share"
+limit = "10GB"                   # "0" = off (default)
+expires = "7d"                   # a share no job used this long goes; "0" = never (default)
 
 [cmds.build]
 exec = ["make", "-j8"]
@@ -74,23 +85,31 @@ timeout = "1h"                   # "0" = never
 ## 4. Hub Config — `/etc/grid/hub.toml`
 
 ```toml
-private = "/etc/grid/hub.key"    # required
+identity = "/etc/grid/hub.key"   # required
 signal = true                    # listen for the nodes' beat and post; default false
 port = 9420                      # where it listens, with signal
-history = "30d"                  # finished jobs and files; "0" = forever (default)
-data = "/var/lib/grid/hub"       # default
+
+[jobs]
+path = "/var/lib/grid/hub/jobs"  # default; also the packed inputs, under tars/
+expires = "30d"                  # finished jobs and files; default "30d"; "0" = never
+
+[history]                        # the event log: job, node, hub
+path = "/var/lib/grid/hub/history"
+limit = "100MB"                  # default; "0" = off
 
 [[nodes]]                        # at least one
 tags = ["build"]
 ip = "10.0.0.2"
-key = "/etc/grid/node.pub"
+trust = "/etc/grid/node.pub"
 port = 9420
+share = true                     # a hint: its share is on; default false
 ```
 
 **TOML rules that bite:**
 
 - Top-level keys must come **before** the first `[table]`; a key after `[hub]` belongs to `[hub]`.
 - Durations are **strings**: `"10m"`, `"30d"`, `"0"`. A bare number (`expires = 600`) is rejected.
+- Sizes are **strings** with a unit, binary: `"512MB"`, `"10GB"` (2³⁰), `"0"`. A bare number is rejected.
 - Unknown keys are errors, named with their line: `unknown keys: retry (line 2)`.
 
 ## 5. Job File — any name, TOML
@@ -102,6 +121,7 @@ retries = 2                      # if the node is lost, run it again up to 2 mor
 [[push]]                         # repeatable; before the steps
 from = "./src"                   # local, relative to the job file
 to = "src"                       # in the space; default the space itself
+share = false                    # true: the node keeps it for later jobs, read only, linked at to
 
 [[steps]]                        # repeatable; run in order
 cmd = "build"                    # a cmd the node defines
@@ -116,7 +136,8 @@ States: `queued` → `running` → `done` | `failed` | `stopped`.
 
 - `queued`: no node with the tag has room; retried every 2 s.
 - A failed step skips the rest; files are **still pulled**; the job is `failed`. So is a step past its `timeout`; only kill makes a job `stopped`.
-- Pushes are packed at submit; the local files are not needed later.
+- Pushes are packed at submit; the local files are not needed later. The hub keeps each packed input once, known by its files' names, sizes, and times, and does not pack it again unchanged; `--repack` forces it.
+- `share = true`: the node keeps the push in its share and links it at `to` (required, not the space); the next job with the same content gets it with no transfer. A cmd must not write there. No other push or pull may be at `to` or under it, and no pull may hold it. A node with share off takes it as a normal push. The tail shows `push <to>: hit | installed | normal`.
 
 ## 6. What a Cmd Sees
 
@@ -137,12 +158,12 @@ Event lines: `[name]` required (`[a-z0-9._-]{1,64}`), then optional `key=value` 
 ```bash
 # node
 grid node run [--config /etc/grid/node.toml]
-grid node status | jobs [--history] | job <id> | tail <id> [--after N]
+grid node status | jobs | job <id> | tail <id> [--after N] | history [--kind K]
 
 # hub; submit prints the id, and --wait exits 0 only if the job is done
 grid hub run [--config /etc/grid/hub.toml]
-grid hub submit <job.toml> [--wait]
-grid hub status | nodes | jobs [--history] | job <id> | tail <id> [--after N]
+grid hub submit <job.toml> [--wait] [--repack]
+grid hub status | nodes | jobs | job <id> | tail <id> [--after N] | history [--kind K]
 grid hub pull <id> <dir>
 grid hub kill <id> | drop <id>
 
@@ -162,7 +183,7 @@ FROM ghcr.io/diphyx/grid-node
 COPY cmds/ /opt/cmds/
 ```
 
-- Config and keys in `/etc/grid`; state in `/var/lib/grid`; runs as uid `100` (`grid`): `chown 100` mounted private keys.
+- Config and keys in `/etc/grid`; state in `/var/lib/grid` (`node/` and `hub/` under it); runs as uid `100` (`grid`): `chown 100` mounted private keys.
 - Each container has its own IP, so hub and node both use `9420`; in the configs, use the container IPs.
 - Health checks: `grid node status`, `grid hub status`.
 
@@ -198,11 +219,11 @@ COPY cmds/ /opt/cmds/
 
 ## 12. Test Kit
 
-| Command             | Checks                                                                                          |
-| ------------------- | ----------------------------------------------------------------------------------------------- |
-| `grid test node`    | a node: 76 checks; needs the kit cmds (`pkg/kit/cmds/node.toml`), `tags = ["kit"]`, `slots = 2` |
-| `grid test hub`     | a hub: every frame it sends; that it drops its jobs                                             |
-| `grid test vectors` | the golden bytes in `spec/vectors.json`                                                         |
+| Command             | Checks                                                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `grid test node`    | a node: 87 checks; needs the kit cmds (`pkg/kit/cmds/node.toml`), `tags = ["kit"]`, `[jobs] limit = 2`; `--share` with a `[share] limit` |
+| `grid test hub`     | a hub: every frame it sends; that it drops its jobs                                                                                      |
+| `grid test vectors` | the golden bytes in `spec/vectors.json`                                                                                                  |
 
 Exit code = failed checks, up to 125. The kit talks to your running program over TCP, so the language does not matter: check your encoder against `spec/vectors.json` first, then point the kit at it. Passing the kit makes any implementation a grid hub or node.
 

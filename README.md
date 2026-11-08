@@ -21,11 +21,11 @@ grid key new /etc/grid/hub
 
 The job is what hub and node share. What a node can run is fixed by the node: its config names a few **cmds**, like `build` → `make -j8`. A job cannot bring its own commands; it is a request to run some of those cmds, by name, with its own `args` and `env`, on its own files:
 
-| Part      | Direction   | What it does                                                                             |
-| --------- | ----------- | ---------------------------------------------------------------------------------------- |
-| **push**  | hub → node  | Before the steps, your files are copied into the job's own folder on the node            |
-| **steps** | on the node | The node runs its cmds one after another in that folder, with the job's `args` and `env` |
-| **pull**  | node → hub  | After the steps, the files the job names are copied back to the hub                      |
+| Part      | Direction   | What it does                                                                                                                         |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **push**  | hub → node  | Before the steps, your files are copied into the job's own folder on the node; a `share` push is kept on the node for the jobs after |
+| **steps** | on the node | The node runs its cmds one after another in that folder, with the job's `args` and `env`                                             |
+| **pull**  | node → hub  | After the steps, the files the job names are copied back to the hub                                                                  |
 
 ```toml
 # build.toml: send ./src, run the node's "build" cmd, bring back ./out
@@ -46,12 +46,12 @@ path = "out"
 
 ```toml
 # /etc/grid/hub.toml
-private = "/etc/grid/hub.key"
+identity = "/etc/grid/hub.key"
 
 [[nodes]]
 tags = ["build"]
 ip = "10.0.0.2"
-key = "/etc/grid/node.pub"
+trust = "/etc/grid/node.pub"
 ```
 
 ```bash
@@ -68,12 +68,12 @@ grid hub pull <id> ./result
 
 ```toml
 # /etc/grid/node.toml
-private = "/etc/grid/node.key"
+identity = "/etc/grid/node.key"
 tags = ["build"]
 
 [hub]
 ip = "10.0.0.1"
-key = "/etc/grid/hub.pub"
+trust = "/etc/grid/hub.pub"
 
 [cmds.build]
 exec = ["make", "-j8"]
