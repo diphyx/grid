@@ -21,7 +21,7 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      # The Windows build differs only in pkg/node/group_windows.go; vet it too.
+      # The Windows build differs only in pkg/node/group_windows.go and link_windows.go; vet it too.
       - name: Vet for Windows
         env:
           GOOS: windows
@@ -29,3 +29,20 @@ jobs:
 
       - name: Test
         run: go test -race ./...
+
+  # On Windows, the tests that need no shell: the kit cmds are sh scripts. TestLink checks the
+  # junction a share is linked by.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: |
+          go test ./pkg/wire ./pkg/history
+          go test ./pkg/node -run "TestLink|TestShareLimit"
+          go test ./pkg/hub -run TestShareRules
