@@ -3,6 +3,7 @@ package hub
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -49,19 +50,29 @@ func realNode(t *testing.T, hubKey wire.Key, signalPort int) (*node.Node, wire.K
 		signal = "true"
 	}
 	kitCmds, _ := os.ReadFile(filepath.Join(cmds, "node.toml"))
-	cfg := fmt.Sprintf(`private = %q
+	cfg := fmt.Sprintf(`identity = %q
 port = %d
 tags = ["kit"]
-slots = 2
 signal = %s
-data = %q
 socket = %q
 
 [hub]
 ip = "127.0.0.1"
 port = %d
-key = %q
-`, writeKey(t, dir, "node.key", nk.Private), port, signal, filepath.Join(dir, "data"), filepath.Join(dir, "s"), signalPort, hubKey.String()) + strings.ReplaceAll(string(kitCmds), "KIT", cmds)
+trust = %q
+
+[jobs]
+path = %q
+limit = 2
+
+[history]
+path = %q
+
+[share]
+path = %q
+limit = "64MB"
+`, writeKey(t, dir, "node.key", nk.Private), port, signal, filepath.Join(dir, "s"), signalPort, hubKey.String(),
+		filepath.Join(dir, "data", "jobs"), filepath.Join(dir, "data", "history"), filepath.Join(dir, "data", "share")) + strings.ReplaceAll(string(kitCmds), "KIT", cmds)
 	path := filepath.Join(dir, "node.toml")
 	os.WriteFile(path, []byte(cfg), 0o644)
 	c, err := node.LoadConfig(path)
@@ -76,8 +87,18 @@ key = %q
 		t.Fatal(err)
 	}
 	go n.Serve()
-	t.Cleanup(func() { n.Close() })
+	t.Cleanup(func() { n.Close(); writable(dir) })
 	return n, nk.Public, port
+}
+
+// writable lets the test's temp dir go: the node's share is read only.
+func writable(dir string) {
+	filepath.WalkDir(dir, func(name string, entry fs.DirEntry, err error) error {
+		if err == nil && entry.IsDir() {
+			os.Chmod(name, 0o755)
+		}
+		return nil
+	})
 }
 
 type peerSpec struct {
@@ -88,12 +109,13 @@ type peerSpec struct {
 func newHub(t *testing.T, data string, hk wire.Keypair, signalPort int, peers ...peerSpec) *Hub {
 	t.Helper()
 	dir := t.TempDir()
-	cfg := &Config{Private: writeKey(t, dir, "hub.key", hk.Private), Data: data, Socket: filepath.Join(dir, "h.sock")}
+	cfg := &Config{Identity: writeKey(t, dir, "hub.key", hk.Private), Socket: filepath.Join(dir, "h.sock"),
+		Jobs: Jobs{Path: filepath.Join(data, "jobs")}, History: History{Path: filepath.Join(data, "history")}}
 	if signalPort != 0 {
 		cfg.Signal, cfg.Port = true, signalPort
 	}
 	for _, p := range peers {
-		cfg.Nodes = append(cfg.Nodes, Peer{Tags: []string{"kit"}, IP: "127.0.0.1", Port: p.port, Key: p.key.String()})
+		cfg.Nodes = append(cfg.Nodes, Peer{Tags: []string{"kit"}, IP: "127.0.0.1", Port: p.port, Trust: p.key.String()})
 	}
 	h, err := New(cfg, quiet)
 	if err != nil {
@@ -161,6 +183,109 @@ func TestRun(t *testing.T) {
 		if !strings.Contains(ts, want) {
 			t.Errorf("no %s event in %s", want, ts)
 		}
+	}
+}
+
+// notes are the texts of a job's note events.
+func notes(t *testing.T, h *Hub, id string) []string {
+	var out []string
+	h.Events(id, 0, nil, func(e wire.Event) bool {
+		var data map[string]any
+		if e.Type == EVENT_NOTE && wire.Unmarshal(e.Data, &data) == nil {
+			out = append(out, fmt.Sprint(data["text"]))
+		}
+		return true
+	})
+	return out
+}
+
+// TestShare: a share push is installed on the node once, then hit; the hub packs a source once,
+// until it changes.
+func TestShare(t *testing.T) {
+	hk, _ := wire.GenerateKeypair(nil)
+	_, nk, port := realNode(t, hk.Public, 0)
+	h := newHub(t, t.TempDir(), hk, 0, peerSpec{nk, port})
+
+	src := t.TempDir()
+	os.MkdirAll(filepath.Join(src, "in"), 0o755)
+	os.WriteFile(filepath.Join(src, "in", "a.txt"), []byte("alpha"), 0o644)
+	job := Job{
+		Tag:   "kit",
+		Push:  []Push{{From: src, To: "lib/model", Share: true}, {From: src, To: "copy"}},
+		Steps: []Step{{Cmd: "write", Args: []string{"out/r.txt", "made"}}},
+		Pull:  []Pull{{Path: "out"}},
+	}
+	run := func(want string) {
+		t.Helper()
+		id, err := h.Submit(job, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := wait(t, h, id, 20*time.Second)
+		if r.State != STATE_DONE {
+			t.Fatalf("record %+v", r)
+		}
+		got := strings.Join(notes(t, h, id), "; ")
+		if !strings.Contains(got, "push lib/model: "+want) || !strings.Contains(got, "push copy: "+PUSHED_NORMAL) {
+			t.Fatalf("notes %s, want push lib/model: %s", got, want)
+		}
+	}
+	run(PUSHED_INSTALLED)
+	manifest, _ := Manifest(src)
+	if !h.Stored(manifest) {
+		t.Fatal("the source is not stored")
+	}
+	run(PUSHED_HIT)
+
+	// a changed source is a new tar, a new id: installed again
+	os.WriteFile(filepath.Join(src, "in", "a.txt"), []byte("beta!"), 0o644)
+	if h.Stored(must(Manifest(src))) {
+		t.Fatal("a changed source is still stored")
+	}
+	run(PUSHED_INSTALLED)
+	if views := h.Nodes(); !views[0].Share {
+		t.Fatalf("the hub does not know the node's share is on: %+v", views[0])
+	}
+}
+
+func must[T any](value T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return value
+}
+
+// TestShareRules: what a share push may not share its place with.
+func TestShareRules(t *testing.T) {
+	step := []Step{{Cmd: "echo"}}
+	bad := map[string]Job{
+		"no to":        {Tag: "kit", Steps: step, Push: []Push{{From: "x", Share: true}}},
+		"to the space": {Tag: "kit", Steps: step, Push: []Push{{From: "x", To: ".", Share: true}}},
+		"push inside":  {Tag: "kit", Steps: step, Push: []Push{{From: "x", To: "m", Share: true}, {From: "y", To: "m/a"}}},
+		"same to":      {Tag: "kit", Steps: step, Push: []Push{{From: "x", To: "m", Share: true}, {From: "y", To: "m"}}},
+		"pull all":     {Tag: "kit", Steps: step, Push: []Push{{From: "x", To: "m", Share: true}}, Pull: []Pull{{Path: "."}}},
+		"pull inside":  {Tag: "kit", Steps: step, Push: []Push{{From: "x", To: "m", Share: true}}, Pull: []Pull{{Path: "m/a"}}},
+	}
+	for name, job := range bad {
+		if job.Check() == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	good := Job{Tag: "kit", Steps: step, Push: []Push{{From: "x", To: "m", Share: true}, {From: "y", To: "mm"}, {From: "z"}}, Pull: []Pull{{Path: "out"}}}
+	if err := good.Check(); err != nil {
+		t.Errorf("good: %v", err)
+	}
+
+	// a push into the space may not bring an entry where the share's link goes
+	hk, _ := wire.GenerateKeypair(nil)
+	h := newHub(t, t.TempDir(), hk, 0, peerSpec{hk.Public, freePort(t)})
+	share, plain := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(share, "w"), []byte("w"), 0o644)
+	os.MkdirAll(filepath.Join(plain, "m"), 0o755)
+	os.WriteFile(filepath.Join(plain, "m", "x"), []byte("x"), 0o644)
+	_, err := h.Submit(Job{Tag: "kit", Steps: step, Push: []Push{{From: share, To: "m", Share: true}, {From: plain}}}, "")
+	if err == nil || !strings.Contains(err.Error(), "a share") {
+		t.Fatalf("got %v", err)
 	}
 }
 
