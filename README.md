@@ -9,9 +9,8 @@ Send jobs to machines you control, and get the results back.
 grid has two sides that talk over one protocol. A **hub** takes your jobs, picks where each one runs, and keeps the results. A **node** is a machine, container, or VM that offers a fixed set of commands and runs jobs with them. They talk over one TCP port, `9420`, encrypted with a key pair on each side. More ways to install, like release archives and Docker images: [Install](docs/README.md#install).
 
 ```bash
-# install: Homebrew, or Go
+# install: Homebrew, or a release archive
 brew install diphyx/tap/grid
-go install github.com/diphyx/grid@latest
 
 # each side makes its own key pair and trusts the other's .pub
 grid key new /etc/grid/hub

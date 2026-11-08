@@ -65,12 +65,11 @@ Drawings and config for each: [Setups](setups.md).
 
 One binary, `grid`, runs either side, on macOS, Linux, and Windows, amd64 and arm64:
 
-| With                                                         | Command                                    | Updates                             |
-| ------------------------------------------------------------ | ------------------------------------------ | ----------------------------------- |
-| Homebrew (macOS, Linux)                                      | `brew install diphyx/tap/grid`             | `brew upgrade grid`                 |
-| Go                                                           | `go install github.com/diphyx/grid@latest` | the same again, or `@v1.2.3` to pin |
-| a [release](https://github.com/diphyx/grid/releases) archive | unpack it and put `grid` on your `PATH`    | a newer archive                     |
-| Docker                                                       | `ghcr.io/diphyx/grid-hub`, `grid-node`     | tags `latest`, `1.2.3`, `1.2`       |
+| With                                                         | Command                                 | Updates                       |
+| ------------------------------------------------------------ | --------------------------------------- | ----------------------------- |
+| Homebrew (macOS, Linux)                                      | `brew install diphyx/tap/grid`          | `brew upgrade grid`           |
+| a [release](https://github.com/diphyx/grid/releases) archive | unpack it and put `grid` on your `PATH` | a newer archive               |
+| Docker                                                       | `ghcr.io/diphyx/grid-hub`, `grid-node`  | tags `latest`, `1.2.3`, `1.2` |
 
 Check it with `grid version`, which prints the release and the protocol it speaks:
 

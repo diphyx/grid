@@ -4,7 +4,7 @@
 
 - **Module:** `github.com/diphyx/grid` (Go 1.27); one binary, `grid`
 - **Images:** `ghcr.io/diphyx/grid-hub`, `ghcr.io/diphyx/grid-node`; tags `latest`, `1.2.3`, `1.2`
-- **Install:** `go install github.com/diphyx/grid@latest` (or `@v1.2.3`), `brew install diphyx/tap/grid`, or a binary from the GitHub releases (macOS, Linux, Windows; amd64, arm64); `grid version` prints it
+- **Install:** `brew install diphyx/tap/grid`, or a binary from the GitHub releases (macOS, Linux, Windows; amd64, arm64); `grid version` prints it
 - **Protocol:** `grid/1`, port `9420`, `Noise_IK_25519_ChaChaPoly_SHA256`, CBOR; exact in `spec/SPEC.md`. Releases are versioned on their own; every release speaking `grid/1` interoperates, and a new protocol comes only with a new major release.
 
 ---
