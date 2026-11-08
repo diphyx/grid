@@ -21,11 +21,11 @@ TCP → IP check → Noise handshake → frames → envelopes
 
 ## 2. Keys
 
-| Item                  | Format                                                                                            |
-| --------------------- | ------------------------------------------------------------------------------------------------- |
-| a key                 | X25519 (Curve25519), 32 bytes, standard base64 with padding: 44 chars                             |
-| `key` in a config     | the public key itself, or a path to a file holding it on one line; what decodes as a key is a key |
-| `private` in a config | a path only; the file holds the private key, base64, one line                                     |
+| Item                   | Format                                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| a key                  | X25519 (Curve25519), 32 bytes, standard base64 with padding: 44 chars                                            |
+| `identity` in a config | who I am: a path only; the file holds the private key, base64, one line                                          |
+| `trust` in a config    | whom I accept: the public key itself, or a path to a file holding it on one line; what decodes as a key is a key |
 
 `grid key new <name>` writes such a pair: `<name>.key` (`0600`) and `<name>.pub`.
 
@@ -69,7 +69,8 @@ A CBOR map with text keys. Exactly one kind key; `id` on all but `ping` and `pon
 | `{str: T}` | map, text keys                                                        |
 | `ms`       | `uint`, unix ms on the node's clock                                   |
 | `dur`      | `uint`, ms; `0` = never                                               |
-| `job`      | `str`, 32 lowercase hex chars (16 random bytes), chosen by the node   |
+| `id`       | `str`, 32 lowercase hex chars (16 bytes)                              |
+| `job`      | an `id`, random, chosen by the node                                   |
 | `path`     | `str`, relative to the space, `/` separators; no `..`, no leading `/` |
 | `?`        | optional; left out = none, or from the start                          |
 
@@ -83,7 +84,7 @@ Hub → node:
 | Call   | `body`                                                 | `ok`                                                | Stream                                            |
 | ------ | ------------------------------------------------------ | --------------------------------------------------- | ------------------------------------------------- |
 | `open` | `{tag: str}`                                           | `{job: job, expires: dur}`                          | —                                                 |
-| `push` | `{job: job, path?: path}`                              | `{sha256: bytes}`                                   | see below                                         |
+| `push` | `{job: job, path?: path, id?: id}`                     | `{sha256: bytes, share: bool}`                      | see below                                         |
 | `exec` | `{job: job, cmd: str, args?: [str], env?: {str: str}}` | `{}`                                                | —                                                 |
 | `tail` | `{job: job, after?: uint}`                             | `{}`                                                | node → hub: `data` event…                         |
 | `stat` | `{job: job}`                                           | `{state: str, cmd?: str, message?: str}`            | —                                                 |
@@ -93,26 +94,26 @@ Hub → node:
 
 Node → hub, only with `signal = true`:
 
-| Call   | `body`                      | `ok` |
-| ------ | --------------------------- | ---- |
-| `beat` | `{tags: [str], free: uint}` | `{}` |
-| `post` | `{job: job, event: event}`  | `{}` |
+| Call   | `body`                                   | `ok` |
+| ------ | ---------------------------------------- | ---- |
+| `beat` | `{tags: [str], free: uint, share: bool}` | `{}` |
+| `post` | `{job: job, event: event}`               | `{}` |
 
 Rules per call:
 
-| Call   | Rule                                                                                                                                                                                                                            |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `open` | no free slot → `full`; tag not served → `unknown`                                                                                                                                                                               |
-| `push` | the receiver owns the offset: node sends `data {offset: uint}` (bytes it already has for this `path`, `0` if new); hub sends `data` bytes from there, then `end {}`; node replies `ok {sha256}` of the whole stream from byte 0 |
-| `exec` | an `exec` on → `running`; no such cmd → `unknown`; `env` may not set `GRID_*` → `invalid`                                                                                                                                       |
-| `tail` | from the first event after `after` (`0` or left out = from the start); ends with `end {}` only on `drop` or `cancel`                                                                                                            |
-| `stat` | `cmd` and `message` left out while `idle`                                                                                                                                                                                       |
-| `kill` | no `exec` on → `ok`, nothing done                                                                                                                                                                                               |
-| `pull` | `offset` = bytes the hub already has; no files → `files: []`, no `data`, `end {}`                                                                                                                                               |
-| `drop` | kills a running `exec` first                                                                                                                                                                                                    |
-| all    | no such job → `unknown`; every job call resets `expires`                                                                                                                                                                        |
-| `beat` | every 5 s; the hub decides when a node is lost                                                                                                                                                                                  |
-| `post` | resent in `seq` order until `ok`                                                                                                                                                                                                |
+| Call   | Rule                                                                                                                                                                                                                                                                                                                                                                          |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open` | no room for a job → `full`; tag not served → `unknown`                                                                                                                                                                                                                                                                                                                        |
+| `push` | the receiver owns the offset: node sends `data {offset: uint, have: bool}` (bytes it already has for this `path`, `0` if new); hub sends `data` bytes from there, then `end {}`; node replies `ok {sha256, share}`, the sha256 of the whole stream from byte 0. With `id`, a share push (§10): `have: true` → hub sends no `data`, only `end {}`; `data` after it → `invalid` |
+| `exec` | an `exec` on → `running`; no such cmd → `unknown`; `env` may not set `GRID_*` → `invalid`                                                                                                                                                                                                                                                                                     |
+| `tail` | from the first event after `after` (`0` or left out = from the start); ends with `end {}` only on `drop` or `cancel`                                                                                                                                                                                                                                                          |
+| `stat` | `cmd` and `message` left out while `idle`                                                                                                                                                                                                                                                                                                                                     |
+| `kill` | no `exec` on → `ok`, nothing done                                                                                                                                                                                                                                                                                                                                             |
+| `pull` | `offset` = bytes the hub already has; no files → `files: []`, no `data`, `end {}`                                                                                                                                                                                                                                                                                             |
+| `drop` | kills a running `exec` first                                                                                                                                                                                                                                                                                                                                                  |
+| all    | no such job → `unknown`; every job call resets `expires`                                                                                                                                                                                                                                                                                                                      |
+| `beat` | every 5 s; the hub decides when a node is lost; `free` = jobs it can still open; `share` = its share is on                                                                                                                                                                                                                                                                    |
+| `post` | resent in `seq` order until `ok`                                                                                                                                                                                                                                                                                                                                              |
 
 ## 7. States
 
@@ -177,11 +178,24 @@ Tar rules:
 - The same files give the same bytes, so `offset` holds; if they changed, `sha256` differs and the hub pulls again from `0`.
 - A stream chunk (`data` bytes) is at most 60 KiB.
 
+Share pushes: a node may keep a **share**, push content kept for the jobs after, read only.
+
+| Item     | Rule                                                                                                                      |
+| -------- | ------------------------------------------------------------------------------------------------------------------------- |
+| id       | the push tar's sha256, first 16 bytes; same id ⇒ same content                                                             |
+| path     | required, not `.`; else `invalid`. The share is linked there, so it must be free; else `invalid`                          |
+| hit      | the node has the id: `have: true`, no bytes; it links the share at `path`; `ok {sha256, share: true}`, `sha256` the tar's |
+| miss     | the hub sends the tar; the node checks the id against its sha256 (else `invalid`), keeps it, links it; `ok {share: true}` |
+| off      | share off, no room, or no link: a normal push into the space; `ok {share: false}`                                         |
+| link     | a symlink (a junction on Windows) at `path` to the share, outside the space; pulling it is `invalid`, by the symlink rule |
+| contents | read only: files `0444`, or `0555` if executable; folders `0555`. A cmd must not write there                              |
+| keep     | a share a job links is kept while the job lives; others go after the node's `[share] expires` or past its `limit`         |
+
 ## 11. Rejects
 
 | Reason    | When                     |
 | --------- | ------------------------ |
-| `full`    | no free slot             |
+| `full`    | no room for another job  |
 | `running` | an `exec` is on          |
 | `unknown` | no such tag, job, or cmd |
 | `invalid` | bad input                |
