@@ -3,6 +3,7 @@ package node
 import (
 	"time"
 
+	"github.com/diphyx/grid/pkg/history"
 	"github.com/diphyx/grid/pkg/wire"
 )
 
@@ -25,7 +26,7 @@ func (node *Node) free() uint64 {
 	node.mutex.Lock()
 	defer node.mutex.Unlock()
 
-	return uint64(max(node.config.Slots-len(node.jobs), 0))
+	return uint64(max(node.config.Jobs.Limit-len(node.jobs), 0))
 }
 
 // signal dials the hub, sends beat every 5 s, and posts every state event in order until it is
@@ -41,6 +42,7 @@ func (node *Node) signal() {
 		if session != nil {
 			_ = session.Close()
 			session = nil
+			node.history.Add(history.Entry{Kind: history.KIND_HUB, Event: "disconnected", Subject: address})
 		}
 		node.hubOnline.Store(false)
 	}
@@ -66,10 +68,11 @@ func (node *Node) signal() {
 				}()
 				session = opened
 				node.hubOnline.Store(true)
+				node.history.Add(history.Entry{Kind: history.KIND_HUB, Event: "connected", Subject: address})
 			}
 		}
 		if session != nil && isBeatDue {
-			beatError := session.Do(wire.CALL_BEAT, wire.Beat{Tags: node.config.Tags, Free: node.free()}, nil)
+			beatError := session.Do(wire.CALL_BEAT, wire.Beat{Tags: node.config.Tags, Free: node.free(), Share: node.config.Share.Limit.Bytes > 0}, nil)
 			if beatError != nil {
 				drop()
 			}

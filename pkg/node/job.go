@@ -18,6 +18,8 @@ import (
 //	jobs/<id>/job       Meta, JSON
 //	jobs/<id>/push/     partial pushes, one file per path
 //	jobs/<id>/own       the file behind $GRID_EVENTS
+//
+// A share push is a link in the space to the share (share.go), not a copy.
 
 // Meta is what the node keeps about a job.
 type Meta struct {
@@ -28,6 +30,7 @@ type Meta struct {
 	State  wire.State `json:"state"`
 	Runs   []Run      `json:"runs,omitempty"`
 	Posted uint64     `json:"posted,omitempty"` // with signal: every state event up to this seq reached the hub
+	Shares []Linked   `json:"shares,omitempty"` // shares linked into the space
 }
 
 // Run is one exec.

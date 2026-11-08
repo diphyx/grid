@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/diphyx/grid/pkg/history"
 	"github.com/diphyx/grid/pkg/wire"
 )
 
@@ -141,8 +142,8 @@ func (node *Node) open(request *wire.Request) error {
 	node.mutex.Lock()
 	defer node.mutex.Unlock()
 
-	if len(node.jobs) >= node.config.Slots {
-		return wire.NewReject(wire.FULL, "%d of %d slots used", len(node.jobs), node.config.Slots)
+	if len(node.jobs) >= node.config.Jobs.Limit {
+		return wire.NewReject(wire.FULL, "%d of %d jobs open", len(node.jobs), node.config.Jobs.Limit)
 	}
 	id := make([]byte, 16)
 	rand.Read(id)
@@ -156,7 +157,7 @@ func (node *Node) open(request *wire.Request) error {
 	node.jobs[meta.ID] = job
 	node.log.Debug("open", "job", meta.ID, "tag", body.Tag)
 
-	return request.OK(wire.OpenOK{Job: meta.ID, Expires: uint64(node.config.Expires.D().Milliseconds())})
+	return request.OK(wire.OpenOK{Job: meta.ID, Expires: uint64(node.config.Jobs.Expires.D().Milliseconds())})
 }
 
 func (node *Node) exec(request *wire.Request, job *Job, body wire.Exec) error {
@@ -273,8 +274,9 @@ func (node *Node) dropJob(job *Job, why string) {
 	node.mutex.Lock()
 	delete(node.jobs, job.ID())
 	node.mutex.Unlock()
+	node.shares.unlink(job)
 	job.mutex.Lock()
-	node.history.add(job.meta, Run{Cmd: "", State: why, Start: job.meta.Opened, End: time.Now()})
+	node.history.Add(history.Entry{Kind: history.KIND_JOB, Event: why, Subject: job.ID(), Took: time.Since(job.meta.Opened)})
 	removeError := job.remove()
 	job.mutex.Unlock()
 	if removeError != nil {

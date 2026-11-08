@@ -17,7 +17,7 @@ import (
 //
 //	GET /status             Status
 //	GET /jobs               []Meta
-//	GET /history            []Entry
+//	GET /history?kind=K     []history.Entry, all kinds or one
 //	GET /job/{id}           JobView
 //	GET /tail/{id}?after=N  JSON lines: wire.JSONEvent, until drop
 
@@ -26,12 +26,20 @@ type Status struct {
 	Addr   string    `json:"addr"`
 	Key    string    `json:"key"`
 	Tags   []string  `json:"tags"`
-	Slots  int       `json:"slots"`
+	Limit  int       `json:"limit"` // jobs at once
 	Free   uint64    `json:"free"`
 	Since  time.Time `json:"since"`
 	Signal bool      `json:"signal"`
 	Hub    string    `json:"hub"`
 	Online bool      `json:"online"` // signal connection up
+	Share  ShareView `json:"share"`
+}
+
+// ShareView is the share space in `grid node status`.
+type ShareView struct {
+	Limit  int64 `json:"limit"` // bytes; 0 = off
+	Used   int64 `json:"used"`
+	Shares int   `json:"shares"`
 }
 
 // JobView is `grid node job`.
@@ -43,8 +51,11 @@ type JobView struct {
 
 // Status is what `grid node status` shows.
 func (node *Node) Status() Status {
-	return Status{Addr: node.Addr(), Key: node.key.Public.String(), Tags: node.config.Tags, Slots: node.config.Slots, Free: node.free(),
-		Since: node.started, Signal: node.config.Signal, Hub: wire.Addr(node.config.Hub.IP, node.config.Hub.Port), Online: node.hubOnline.Load()}
+	used, count := node.shares.usage()
+
+	return Status{Addr: node.Addr(), Key: node.key.Public.String(), Tags: node.config.Tags, Limit: node.config.Jobs.Limit, Free: node.free(),
+		Since: node.started, Signal: node.config.Signal, Hub: wire.Addr(node.config.Hub.IP, node.config.Hub.Port), Online: node.hubOnline.Load(),
+		Share: ShareView{Limit: node.shares.limit, Used: used, Shares: count}}
 }
 
 // ServeLocal serves the view on the config's socket until Close.
@@ -78,7 +89,9 @@ func (node *Node) localMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /status", func(writer http.ResponseWriter, request *http.Request) { writeJSON(writer, node.Status()) })
 	mux.HandleFunc("GET /jobs", func(writer http.ResponseWriter, request *http.Request) { writeJSON(writer, node.Jobs()) })
-	mux.HandleFunc("GET /history", func(writer http.ResponseWriter, request *http.Request) { writeJSON(writer, node.history.Read()) })
+	mux.HandleFunc("GET /history", func(writer http.ResponseWriter, request *http.Request) {
+		writeJSON(writer, node.history.Read(request.URL.Query().Get("kind")))
+	})
 	mux.HandleFunc("GET /job/{id}", func(writer http.ResponseWriter, request *http.Request) {
 		job := node.job(request.PathValue("id"))
 		if job == nil {
@@ -88,7 +101,11 @@ func (node *Node) localMux() *http.ServeMux {
 		}
 		job.mutex.Lock()
 		view := JobView{Meta: job.meta}
-		entries, _ := wire.Collect(job.space, ".", 0)
+		shared := map[string]bool{}
+		for _, linked := range job.meta.Shares {
+			shared[linked.Path] = true
+		}
+		entries, _ := wire.CollectSkip(job.space, ".", 0, shared)
 		job.mutex.Unlock()
 		view.Files = []wire.File{}
 		for _, entry := range entries {

@@ -1,6 +1,8 @@
 package node
 
 import (
+	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -10,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/diphyx/grid/pkg/history"
 	"github.com/diphyx/grid/pkg/wire"
 )
 
@@ -19,7 +22,8 @@ type Node struct {
 	key     wire.Keypair
 	hubKey  wire.Key
 	log     *slog.Logger
-	history *history
+	history *history.Log
+	shares  *shares
 	started time.Time
 
 	mutex sync.Mutex
@@ -34,8 +38,12 @@ type Node struct {
 	sessions  sync.Map // *wire.Session → struct{}: open hub connections, closed by Close
 }
 
-// New loads keys and jobs left on disk.
+// New fills the config's defaults, loads keys, and reopens the jobs left on disk.
 func New(config *Config, log *slog.Logger) (*Node, error) {
+	checkError := config.check()
+	if checkError != nil {
+		return nil, checkError
+	}
 	key, hubKey, keysError := config.Keys()
 	if keysError != nil {
 		return nil, keysError
@@ -49,10 +57,15 @@ func New(config *Config, log *slog.Logger) (*Node, error) {
 	if mkdirAllError != nil {
 		return nil, mkdirAllError
 	}
-	self.history, keysError = openHistory(filepath.Join(config.Data, "history"), config.History.D())
-	if keysError != nil {
-		return nil, keysError
+	events, openLogError := history.OpenLog(config.History.Path, config.History.Limit.Bytes, config.History.Expires.D())
+	if openLogError != nil {
+		return nil, fmt.Errorf("history: %w", openLogError)
 	}
+	shared, openSharesError := openShares(config.Share, events)
+	if openSharesError != nil {
+		return nil, fmt.Errorf("share: %w", openSharesError)
+	}
+	self.history, self.shares = events, shared
 	loadError := self.load()
 	if loadError != nil {
 		return nil, loadError
@@ -60,7 +73,7 @@ func New(config *Config, log *slog.Logger) (*Node, error) {
 	return self, nil
 }
 
-func (node *Node) jobsDir() string { return filepath.Join(node.config.Data, "jobs") }
+func (node *Node) jobsDir() string { return node.config.Jobs.Path }
 
 // load reopens jobs after a restart; a cmd that was running is failed.
 func (node *Node) load() error {
@@ -83,6 +96,7 @@ func (node *Node) load() error {
 			node.finish(job, wire.State{State: wire.STATE_FAILED, Cmd: job.meta.State.Cmd, Message: "node restarted"})
 			job.mutex.Unlock()
 		}
+		node.shares.keep(job)
 		node.jobs[job.ID()] = job
 	}
 	if len(node.jobs) > 0 {
@@ -119,7 +133,8 @@ func (node *Node) Serve() error {
 			return listenError
 		}
 	}
-	node.log.Debug("node up", "addr", node.Addr(), "key", node.key.Public.String(), "tags", node.config.Tags, "slots", node.config.Slots)
+	node.log.Debug("node up", "addr", node.Addr(), "key", node.key.Public.String(), "tags", node.config.Tags, "limit", node.config.Jobs.Limit)
+	node.history.Add(history.Entry{Kind: history.KIND_NODE, Event: "started", Subject: node.Addr()})
 	go node.janitor()
 	if node.config.Signal {
 		go node.signal()
@@ -140,6 +155,10 @@ func (node *Node) Serve() error {
 			connection, serverError := wire.NewServer(socket, node.key, peers, nil)
 			if serverError != nil {
 				node.log.Debug("handshake refused", "ip", wire.RemoteIP(socket), "err", serverError)
+				// a stranger's IP is closed before the handshake: noise, not history
+				if !errors.Is(serverError, wire.ErrPeerIP) {
+					node.history.Add(history.Entry{Kind: history.KIND_HUB, Event: "refused", Subject: wire.RemoteIP(socket), Message: serverError.Error()})
+				}
 				socket.Close()
 
 				return
@@ -179,23 +198,24 @@ func (node *Node) Close() error {
 	node.mutex.Unlock()
 	// cmds run in their own process groups: nothing else stops them once the node exits
 	node.running.Wait()
+	node.history.Add(history.Entry{Kind: history.KIND_NODE, Event: "stopped", Subject: node.Addr()})
 
-	return nil
+	return node.history.Close()
 }
 
-// janitor drops idle jobs past expires and prunes history.
+// janitor drops idle jobs past expires, removes shares past theirs, and prunes the history.
 func (node *Node) janitor() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
-	last := time.Now()
+	lastSweep, lastPrune := time.Now(), time.Now()
 	for {
 		select {
 		case <-node.stop:
 			return
 		case <-ticker.C:
 		}
-		exp := node.config.Expires.D()
+		exp := node.config.Jobs.Expires.D()
 		if exp > 0 {
 			node.mutex.Lock()
 			var old []*Job
@@ -211,9 +231,13 @@ func (node *Node) janitor() {
 				node.expireJob(job, exp)
 			}
 		}
-		if time.Since(last) > time.Hour {
-			node.history.prune()
-			last = time.Now()
+		if time.Since(lastSweep) > time.Minute {
+			node.shares.sweep()
+			lastSweep = time.Now()
+		}
+		if time.Since(lastPrune) > time.Hour {
+			node.history.Prune()
+			lastPrune = time.Now()
 		}
 	}
 }

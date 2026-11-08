@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/diphyx/grid/pkg/history"
 	"github.com/diphyx/grid/pkg/wire"
 )
 
@@ -267,7 +268,7 @@ func (node *Node) finish(job *Job, end wire.State) {
 	if index >= 0 {
 		run := &job.meta.Runs[index]
 		run.State, run.Message, run.End = end.State, end.Message, time.Now()
-		node.history.add(job.meta, *run)
+		node.history.Add(history.Entry{At: run.End, Kind: history.KIND_JOB, Event: run.State, Subject: job.ID() + "/" + run.Cmd, Message: run.Message, Took: run.End.Sub(run.Start)})
 	}
 	job.meta.Used = time.Now()
 	job.emit(wire.EVENT_STATE, end)

@@ -11,12 +11,22 @@ import (
 	"github.com/diphyx/grid/pkg/wire"
 )
 
-// push receives a tar into the space (§10). The node owns the offset:
-// the partial stream lives in push/<hash of path> until it ends.
+// push receives a tar into the space (§10). The node owns the offset: the partial stream lives
+// in push/<hash of path> until it ends. A share push the node has is a hit: it is linked, and no
+// bytes come.
 func (node *Node) push(request *wire.Request, job *Job, body wire.Push) error {
 	base := body.Path
 	if base == "" {
 		base = "."
+	}
+	if body.ID != "" && node.shares.isOn() {
+		meta, isHit, hitError := node.shares.hit(job, body.ID, base)
+		if hitError != nil {
+			return hitError
+		}
+		if isHit {
+			return pushHit(request, meta)
+		}
 	}
 	key := sha256.Sum256([]byte(base))
 	part := job.path("push/" + hex.EncodeToString(key[:8]))
@@ -65,14 +75,85 @@ func (node *Node) push(request *wire.Request, job *Job, body wire.Push) error {
 			{
 				defer func() { _ = os.Remove(part) }()
 
-				sum, extractError := wire.Extract(file, job.space, base)
-				if extractError != nil {
-					return extractError
-				}
-				return request.OK(wire.PushOK{Sha256: sum})
+				return node.pushEnd(request, job, file, body.ID, base)
 			}
 		}
 	}
+}
+
+// pushHit answers a hit: `have`, then only `end` may come.
+func pushHit(request *wire.Request, meta shareMeta) error {
+	dataError := request.Data(wire.PushOffset{Have: true})
+	if dataError != nil {
+		return nil
+	}
+	for {
+		envelope, nextError := request.Next()
+		if nextError != nil {
+			return nil
+		}
+		switch {
+		case envelope.Data != nil:
+			{
+				return wire.NewReject(wire.INVALID, "push: data after have")
+			}
+		case envelope.Cancel != nil:
+			{
+				return request.End(wire.Empty{})
+			}
+		case envelope.End != nil:
+			{
+				return request.OK(wire.PushOK{Sha256: meta.Sha256, Share: true})
+			}
+		}
+	}
+}
+
+// pushEnd puts a whole push in place: a share push into the share, linked into the space, when
+// the share is on and has room; anything else into the space.
+func (node *Node) pushEnd(request *wire.Request, job *Job, file *os.File, id, base string) error {
+	if id != "" && node.shares.isOn() {
+		sum, size, hashError := hashFile(file)
+		if hashError != nil {
+			return hashError
+		}
+		if hex.EncodeToString(sum[:16]) != id {
+			return wire.NewReject(wire.INVALID, "push: id %s is not the tar's", id)
+		}
+		reserveError := node.shares.reserve(size)
+		if reserveError == nil {
+			installError := node.shares.install(job, file, id, base, sum, size)
+			if installError == nil {
+				return request.OK(wire.PushOK{Sha256: sum, Share: true})
+			}
+			var reject *wire.Reject
+			if errors.As(installError, &reject) {
+				return reject // a bad tar, or the path taken
+			}
+			node.log.Error("share install", "id", id, "err", installError)
+		}
+	}
+	sum, extractError := wire.Extract(file, job.space, base)
+	if extractError != nil {
+		return extractError
+	}
+
+	return request.OK(wire.PushOK{Sha256: sum})
+}
+
+// hashFile is the sha256 and size of a whole file.
+func hashFile(file *os.File) ([]byte, int64, error) {
+	_, seekError := file.Seek(0, io.SeekStart)
+	if seekError != nil {
+		return nil, 0, seekError
+	}
+	hash := sha256.New()
+	size, copyError := io.Copy(hash, file)
+	if copyError != nil {
+		return nil, 0, copyError
+	}
+
+	return hash.Sum(nil), size, nil
 }
 
 // pull sends files from the space as a tar (§10).
