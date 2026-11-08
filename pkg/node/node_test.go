@@ -1,8 +1,11 @@
 package node
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -13,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/diphyx/grid/pkg/history"
 	"github.com/diphyx/grid/pkg/kit"
 	"github.com/diphyx/grid/pkg/wire"
 )
@@ -43,20 +47,29 @@ func testNodeWith(t *testing.T, data, expires string) (*Node, wire.Keypair, stri
 	cmds, _ := filepath.Abs("../kit/cmds")
 	sigPort := freePort(t)
 	kitCmds, _ := os.ReadFile(filepath.Join(cmds, "node.toml"))
-	cfg := fmt.Sprintf(`private = %q
+	cfg := fmt.Sprintf(`identity = %q
 port = %d
 tags = ["kit"]
-slots = 2
-expires = %q
-history = "30d"
 signal = true
-data = %q
 
 [hub]
 ip = "127.0.0.1"
 port = %d
-key = %q
-`, priv, freePort(t), expires, data, sigPort, hub.Public.String()) + strings.ReplaceAll(string(kitCmds), "KIT", cmds)
+trust = %q
+
+[jobs]
+path = %q
+limit = 2
+expires = %q
+
+[history]
+path = %q
+expires = "30d"
+
+[share]
+path = %q
+limit = "64MB"
+`, priv, freePort(t), sigPort, hub.Public.String(), filepath.Join(data, "jobs"), expires, filepath.Join(data, "history"), filepath.Join(data, "share")) + strings.ReplaceAll(string(kitCmds), "KIT", cmds)
 	path := filepath.Join(dir, "node.toml")
 	os.WriteFile(path, []byte(cfg), 0o644)
 	c, err := LoadConfig(path)
@@ -71,7 +84,175 @@ key = %q
 		t.Fatal(err)
 	}
 	go n.Serve()
+	t.Cleanup(func() { writable(data) })
 	return n, hub, fmt.Sprintf("127.0.0.1:%d", sigPort)
+}
+
+// writable lets the test's temp dir go: the share is read only.
+func writable(dir string) {
+	filepath.WalkDir(dir, func(name string, entry fs.DirEntry, err error) error {
+		if err == nil && entry.IsDir() {
+			os.Chmod(name, 0o755)
+		}
+		return nil
+	})
+}
+
+// pushShare pushes tarb as a share push; it reports whether the node said have.
+func pushShare(s *wire.Session, job, path, id string, tarb []byte) (wire.PushOK, bool, error) {
+	var ok wire.PushOK
+	call, err := s.Start(wire.CALL_PUSH, wire.Push{Job: job, Path: path, ID: id})
+	if err != nil {
+		return ok, false, err
+	}
+	defer call.Close()
+	first, err := call.Next()
+	if err != nil {
+		return ok, false, err
+	}
+	if first.Reject != nil {
+		return ok, false, first.Reject
+	}
+	var offset wire.PushOffset
+	wire.Unmarshal(first.Data, &offset)
+	if !offset.Have {
+		for i := int(offset.Offset); i < len(tarb); i += wire.MAX_CHUNK {
+			call.Data(tarb[i:min(i+wire.MAX_CHUNK, len(tarb))])
+		}
+	}
+	call.End(wire.Empty{})
+	return ok, offset.Have, call.Reply(&ok)
+}
+
+func tarID(tarb []byte) string {
+	sum := sha256.Sum256(tarb)
+	return hex.EncodeToString(sum[:16])
+}
+
+// TestShare: a share push is installed once, linked into each job, kept while a job links it,
+// counted again after a restart, and removed past its limit or expires.
+func TestShare(t *testing.T) {
+	data := t.TempDir()
+	n, hub, _ := testNode(t, data)
+	s := dialNode(t, n, hub)
+	at := time.Unix(1700000000, 0)
+	model := wire.TarBytes([]wire.Entry{{Path: "w.bin", Data: []byte("weights"), ModTime: at}, {Path: "run", Data: []byte("#!/bin/sh"), Exec: true, ModTime: at}})
+	id := tarID(model)
+	var a, b wire.OpenOK
+	s.Do(wire.CALL_OPEN, wire.Open{Tag: "kit"}, &a)
+	s.Do(wire.CALL_OPEN, wire.Open{Tag: "kit"}, &b)
+
+	ok, have, err := pushShare(s, a.Job, "lib/model", id, model)
+	if err != nil || have || !ok.Share {
+		t.Fatalf("first push: have %v, %+v, %v", have, ok, err)
+	}
+	ok, have, err = pushShare(s, b.Job, "model", id, model)
+	if err != nil || !have || !ok.Share || hex.EncodeToString(ok.Sha256[:16]) != id {
+		t.Fatalf("second push: have %v, %+v, %v", have, ok, err)
+	}
+	for job, path := range map[string]string{a.Job: "lib/model/w.bin", b.Job: "model/w.bin"} {
+		content, err := os.ReadFile(filepath.Join(data, "jobs", job, "space", path))
+		if err != nil || string(content) != "weights" {
+			t.Fatalf("%s: %q %v", path, content, err)
+		}
+	}
+	shared := filepath.Join(data, "share", id)
+	if info, err := os.Stat(filepath.Join(shared, "w.bin")); err != nil || info.Mode().Perm() != 0o444 {
+		t.Fatalf("share file: %v %v", info, err)
+	}
+	if info, _ := os.Stat(filepath.Join(shared, "run")); info.Mode().Perm() != 0o555 {
+		t.Fatalf("share exec: %v", info.Mode())
+	}
+
+	// the id must be the tar's; data after have is invalid; the place must be free
+	if _, _, err := pushShare(s, a.Job, "other", strings.Repeat("0", 32), model); !wire.IsReject(err, wire.INVALID) {
+		t.Fatalf("wrong id: %v", err)
+	}
+	if _, _, err := pushShare(s, a.Job, "model", id, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := pushShare(s, a.Job, "model", id, nil); !wire.IsReject(err, wire.INVALID) {
+		t.Fatalf("taken path: %v", err)
+	}
+
+	// the job view skips the links; the space never holds a copy
+	n.shares.mutex.Lock()
+	inUse := n.shares.inUse[id]
+	n.shares.mutex.Unlock()
+	if inUse != 3 {
+		t.Fatalf("in use %d, want 3", inUse)
+	}
+
+	// a restart counts the links again
+	n.Close()
+	n2 := reopen(t, n)
+	defer n2.Close()
+	n2.shares.mutex.Lock()
+	inUse = n2.shares.inUse[id]
+	n2.shares.mutex.Unlock()
+	if inUse != 3 {
+		t.Fatalf("after restart in use %d, want 3", inUse)
+	}
+
+	// in use, it stays past expires; once dropped, it goes
+	n2.shares.expires = time.Millisecond
+	time.Sleep(5 * time.Millisecond)
+	n2.shares.sweep()
+	if _, err := os.Stat(shared); err != nil {
+		t.Fatal("a share in use was removed")
+	}
+	s2 := dialNode(t, n2, hub)
+	s2.Do(wire.CALL_DROP, wire.JobRef{Job: a.Job}, nil)
+	s2.Do(wire.CALL_DROP, wire.JobRef{Job: b.Job}, nil)
+	if _, err := os.Stat(filepath.Join(shared, "w.bin")); err != nil {
+		t.Fatal("dropping a job removed the share's files through its link")
+	}
+	n2.shares.sweep()
+	if _, err := os.Stat(shared); !os.IsNotExist(err) {
+		t.Fatalf("an expired share stays: %v", err)
+	}
+	if got := n2.history.Read(history.KIND_SHARE); len(got) != 2 || got[0].Event != "install" || got[1].Message != "expired" {
+		t.Fatalf("history %+v", got)
+	}
+}
+
+// TestShareLimit: past the limit, the least recently hit share goes; one that cannot fit is a
+// normal push.
+func TestShareLimit(t *testing.T) {
+	n, hub, _ := testNode(t, t.TempDir())
+	defer n.Close()
+	s := dialNode(t, n, hub)
+	n.shares.limit = 4096
+	var open wire.OpenOK
+	s.Do(wire.CALL_OPEN, wire.Open{Tag: "kit"}, &open)
+	tars := make([][]byte, 3)
+	for i := range tars {
+		tars[i] = wire.TarBytes([]wire.Entry{{Path: "f", Data: []byte{byte(i)}, ModTime: time.Unix(1700000000, 0)}})
+	}
+	for i, tarb := range tars[:2] {
+		ok, _, err := pushShare(s, open.Job, fmt.Sprintf("s%d", i), tarID(tarb), tarb)
+		if err != nil || !ok.Share {
+			t.Fatalf("%d: %+v %v", i, ok, err)
+		}
+	}
+	// a new job, no shares in use: the third fits only once the oldest goes
+	s.Do(wire.CALL_DROP, wire.JobRef{Job: open.Job}, nil)
+	s.Do(wire.CALL_OPEN, wire.Open{Tag: "kit"}, &open)
+	ok, _, err := pushShare(s, open.Job, "s2", tarID(tars[2]), tars[2])
+	if err != nil || !ok.Share {
+		t.Fatalf("third: %+v %v", ok, err)
+	}
+	if _, err := os.Stat(filepath.Join(n.shares.dir, tarID(tars[0]))); !os.IsNotExist(err) {
+		t.Fatal("the oldest share stays past the limit")
+	}
+	big := wire.TarBytes([]wire.Entry{{Path: "big", Data: make([]byte, 8192), ModTime: time.Unix(1700000000, 0)}})
+	ok, _, err = pushShare(s, open.Job, "big", tarID(big), big)
+	if err != nil || ok.Share {
+		t.Fatalf("too big: %+v %v", ok, err)
+	}
+	if content, _ := os.ReadFile(filepath.Join(n.config.Jobs.Path, open.Job, "space", "big", "big")); len(content) != 8192 {
+		t.Fatal("a share too big did not go into the space")
+	}
 }
 
 // TestKit runs the whole test kit against the real node.
@@ -83,7 +264,7 @@ func TestKit(t *testing.T) {
 		out = os.Stdout
 	}
 	r := kit.NewReport(out, false)
-	kit.TestNode(kit.NodeTarget{Addr: fmt.Sprintf("127.0.0.1:%d", n.config.Port), NodeKey: n.key.Public, Hub: hub, Slots: 2, Listen: sig, Wait: 15 * time.Second}, r)
+	kit.TestNode(kit.NodeTarget{Addr: fmt.Sprintf("127.0.0.1:%d", n.config.Port), NodeKey: n.key.Public, Hub: hub, Limit: 2, Share: true, Listen: sig, Wait: 15 * time.Second}, r)
 	for _, x := range r.All {
 		if !x.Pass {
 			t.Errorf("%s %s: %s", x.Spec, x.Name, x.Note)
@@ -170,8 +351,8 @@ func TestExpires(t *testing.T) {
 	if err := s.Do(wire.CALL_STAT, wire.JobRef{Job: b.Job}, nil); err != nil {
 		t.Fatalf("running job expired: %v", err)
 	}
-	hs := n.history.Read()
-	if len(hs) == 0 || hs[len(hs)-1].State != "expired" {
+	hs := n.history.Read(history.KIND_JOB)
+	if len(hs) == 0 || hs[len(hs)-1].Event != "expired" {
 		t.Fatalf("history %+v", hs)
 	}
 }
@@ -308,7 +489,7 @@ func TestReadLines(t *testing.T) {
 // and what it left behind is stopped, whether it holds the output or not.
 func TestLeftBehind(t *testing.T) {
 	dir := t.TempDir()
-	logs, err := openHistory(filepath.Join(dir, "history"), 0)
+	logs, err := history.OpenLog(filepath.Join(dir, "history"), wire.MB, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,4 +522,19 @@ func TestLeftBehind(t *testing.T) {
 			t.Fatal("what the cmd left behind kept running:", filepath.Base(left))
 		}
 	}
+}
+
+// reopen starts the node again on its config, after Close.
+func reopen(t *testing.T, n *Node) *Node {
+	t.Helper()
+	time.Sleep(300 * time.Millisecond)
+	n2, err := New(n.config, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := n2.Listen(); err != nil {
+		t.Fatal(err)
+	}
+	go n2.Serve()
+	return n2
 }
