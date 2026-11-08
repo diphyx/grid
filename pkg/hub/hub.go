@@ -12,10 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
+	"github.com/diphyx/grid/pkg/history"
 	"github.com/diphyx/grid/pkg/wire"
 )
 
@@ -24,6 +24,8 @@ type Hub struct {
 	config  *Config
 	key     wire.Keypair
 	log     *slog.Logger
+	history *history.Log
+	tars    *tars
 	started time.Time
 	links   []*link
 
@@ -42,20 +44,28 @@ func New(config *Config, log *slog.Logger) (*Hub, error) {
 	if checkError != nil {
 		return nil, checkError
 	}
-	key, loadError := wire.LoadPrivate(config.Private)
+	key, loadError := wire.LoadPrivate(config.Identity)
 	if loadError != nil {
-		return nil, fmt.Errorf("private: %w", loadError)
+		return nil, fmt.Errorf("identity: %w", loadError)
 	}
 	if log == nil {
 		log = slog.Default()
 	}
-	hub := &Hub{config: config, key: key, log: log, started: time.Now(), jobs: map[string]*entry{}, stop: make(chan struct{})}
+	events, openLogError := history.OpenLog(config.History.Path, config.History.Limit.Bytes, config.History.Expires.D())
+	if openLogError != nil {
+		return nil, fmt.Errorf("history: %w", openLogError)
+	}
+	store, newTarsError := newTars(filepath.Join(config.Jobs.Path, "tars"))
+	if newTarsError != nil {
+		return nil, fmt.Errorf("jobs: %w", newTarsError)
+	}
+	hub := &Hub{config: config, key: key, log: log, history: events, tars: store, started: time.Now(), jobs: map[string]*entry{}, stop: make(chan struct{})}
 	for i, peer := range config.Nodes {
-		nodeKey, keyError := wire.LoadKey(peer.Key)
+		nodeKey, keyError := wire.LoadKey(peer.Trust)
 		if keyError != nil {
-			return nil, fmt.Errorf("nodes[%d].key: %w", i, keyError)
+			return nil, fmt.Errorf("nodes[%d].trust: %w", i, keyError)
 		}
-		hub.links = append(hub.links, &link{peer: peer, address: wire.Addr(peer.IP, peer.Port), key: nodeKey})
+		hub.links = append(hub.links, &link{peer: peer, address: wire.Addr(peer.IP, peer.Port), key: nodeKey, history: events, share: peer.Share})
 	}
 
 	return hub, nil
@@ -64,7 +74,7 @@ func New(config *Config, log *slog.Logger) (*Hub, error) {
 // Key is the hub's public key, for the nodes' configs.
 func (hub *Hub) Key() wire.Key { return hub.key.Public }
 
-func (hub *Hub) jobsDir() string { return filepath.Join(hub.config.Data, "jobs") }
+func (hub *Hub) jobsDir() string { return hub.config.Jobs.Path }
 
 // Start reopens the jobs on disk, resumes the unfinished ones, and listens for beat and post
 // when signal is on. It returns once all of that is running.
@@ -109,8 +119,10 @@ func (hub *Hub) Start() error {
 			return listenError
 		}
 	}
+	hub.sweep()
 	go hub.janitor()
 	hub.log.Debug("hub up", "key", hub.key.Public.String(), "nodes", len(hub.links), "signal", hub.config.Signal)
+	hub.history.Add(history.Entry{Kind: history.KIND_HUB, Event: "started"})
 
 	return nil
 }
@@ -136,18 +148,34 @@ func (hub *Hub) Close() error {
 		}
 		each.mutex.Unlock()
 	}
+	hub.history.Add(history.Entry{Kind: history.KIND_HUB, Event: "stopped"})
 
-	return nil
+	return hub.history.Close()
+}
+
+// Packed is one push for SubmitPacked: a tar, or the manifest of a tar the hub has stored.
+type Packed struct {
+	Manifest string    // the source's key (Manifest); "" = none
+	Tar      io.Reader // nil = the stored tar for Manifest
+}
+
+// Stored reports whether the hub has a tar for a source with that manifest, so a submit can
+// leave the tar out.
+func (hub *Hub) Stored(manifest string) bool {
+	_, ok := hub.tars.lookup(manifest)
+
+	return ok
 }
 
 // Submit runs a job. Push paths are local, relative to base ("" = the current folder); they are
-// packed now, so the job does not depend on them later. It returns the job's id.
+// packed now, so the job does not depend on them later, unless the hub has them already. It
+// returns the job's id.
 func (hub *Hub) Submit(job Job, base string) (string, error) {
 	checkError := job.Check()
 	if checkError != nil {
 		return "", checkError
 	}
-	pushes := make([]io.Reader, len(job.Push))
+	pushes := make([]Packed, len(job.Push))
 	var files []*os.File
 	defer func() {
 		for _, file := range files {
@@ -160,6 +188,15 @@ func (hub *Hub) Submit(job Job, base string) (string, error) {
 		from := push.From
 		if !filepath.IsAbs(from) && base != "" {
 			from = filepath.Join(base, from)
+		}
+		manifest, manifestError := Manifest(from)
+		if manifestError != nil {
+			return "", fmt.Errorf("push[%d]: %w", i, manifestError)
+		}
+		if hub.Stored(manifest) {
+			pushes[i] = Packed{Manifest: manifest}
+
+			continue
 		}
 		file, createError := os.CreateTemp("", "grid-push-*.tar")
 		if createError != nil {
@@ -174,15 +211,15 @@ func (hub *Hub) Submit(job Job, base string) (string, error) {
 		if seekError != nil {
 			return "", seekError
 		}
-		pushes[i] = file
+		pushes[i] = Packed{Manifest: manifest, Tar: file}
 	}
 
 	return hub.SubmitPacked(job, pushes)
 }
 
-// SubmitPacked runs a job whose pushes are already tars, one per job.Push, in order;
-// the socket API uses it, since the files are on the caller's side.
-func (hub *Hub) SubmitPacked(job Job, pushes []io.Reader) (string, error) {
+// SubmitPacked runs a job whose pushes are already packed, one per job.Push, in order; the
+// socket API uses it, since the files are on the caller's side.
+func (hub *Hub) SubmitPacked(job Job, pushes []Packed) (string, error) {
 	checkError := job.Check()
 	if checkError != nil {
 		return "", checkError
@@ -190,14 +227,35 @@ func (hub *Hub) SubmitPacked(job Job, pushes []io.Reader) (string, error) {
 	if len(pushes) != len(job.Push) {
 		return "", fmt.Errorf("push: %d tars for %d entries", len(pushes), len(job.Push))
 	}
+	sums := make([]string, len(pushes))
+	for i, packed := range pushes {
+		if packed.Tar == nil {
+			sum, ok := hub.tars.lookup(packed.Manifest)
+			if !ok {
+				return "", fmt.Errorf("push[%d]: no tar stored for manifest %q", i, packed.Manifest)
+			}
+			sums[i] = sum
+
+			continue
+		}
+		sum, putError := hub.tars.put(packed.Manifest, packed.Tar)
+		if putError != nil {
+			return "", fmt.Errorf("push[%d]: %w", i, putError)
+		}
+		sums[i] = sum
+	}
+	checkTarsError := job.checkTars(hub.tars, sums)
+	if checkTarsError != nil {
+		return "", checkTarsError
+	}
 	id := make([]byte, 16)
 	_, _ = rand.Read(id)
-	record := Record{ID: hex.EncodeToString(id), Job: job, State: STATE_QUEUED, Submitted: time.Now()}
+	record := Record{ID: hex.EncodeToString(id), Job: job, Pushes: sums, State: STATE_QUEUED, Submitted: time.Now()}
 	for _, step := range job.Steps {
 		record.Steps = append(record.Steps, StepRun{Cmd: step.Cmd, State: wire.STATE_IDLE})
 	}
 	dir := filepath.Join(hub.jobsDir(), record.ID)
-	created, storeError := hub.store(dir, record, pushes)
+	created, storeError := hub.store(dir, record)
 	if storeError != nil {
 		// leave nothing a restart would pick up as a job
 		_ = os.RemoveAll(dir)
@@ -209,52 +267,26 @@ func (hub *Hub) SubmitPacked(job Job, pushes []io.Reader) (string, error) {
 	hub.jobs[record.ID] = created
 	hub.mutex.Unlock()
 	hub.log.Debug("submit", "job", record.ID, "tag", job.Tag, "steps", len(job.Steps))
+	hub.history.Add(history.Entry{Kind: history.KIND_JOB, Event: "submitted", Subject: record.ID, Message: job.Tag})
 	go hub.work(created)
 
 	return record.ID, nil
 }
 
-// store writes a new job to disk: its record, then its push tars.
-func (hub *Hub) store(dir string, record Record, pushes []io.Reader) (*entry, error) {
+// store writes a new job to disk; its pushes are in the tar store already.
+func (hub *Hub) store(dir string, record Record) (*entry, error) {
 	created, newError := newEntry(dir, record)
 	if newError != nil {
 		return nil, newError
 	}
-	writeError := created.writePushes(pushes)
-	if writeError == nil {
-		writeError = created.save() // last: from here on the job exists
-	}
-	if writeError != nil {
+	saveError := created.save() // from here on the job exists
+	if saveError != nil {
 		_ = created.events.Close()
 
-		return nil, writeError
+		return nil, saveError
 	}
 
 	return created, nil
-}
-
-// writePushes saves the push tars, one file per job.Push.
-func (entry *entry) writePushes(pushes []io.Reader) error {
-	mkdirError := os.MkdirAll(entry.path("push"), 0o755)
-	if mkdirError != nil {
-		return mkdirError
-	}
-	for i, push := range pushes {
-		file, createError := os.Create(entry.path("push/" + strconv.Itoa(i)))
-		if createError != nil {
-			return createError
-		}
-		_, copyError := io.Copy(file, push)
-		closeError := file.Close()
-		if copyError != nil {
-			return copyError
-		}
-		if closeError != nil {
-			return closeError
-		}
-	}
-
-	return nil
 }
 
 // ErrUnknown is the error for a job id the hub does not have.
@@ -426,7 +458,7 @@ func (hub *Hub) Files(id string) (func(io.Writer) error, error) {
 	}, nil
 }
 
-// janitor drops finished jobs older than history.
+// janitor drops finished jobs past expires, and the tars no job uses.
 func (hub *Hub) janitor() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -441,38 +473,23 @@ func (hub *Hub) janitor() {
 			{
 			}
 		}
-		keep := hub.config.History.D()
-		if keep == 0 {
-			continue
-		}
+		keep := hub.config.Jobs.Expires.D()
 		for _, record := range hub.Jobs() {
-			if record.IsFinished() && time.Since(record.Ended) > keep {
+			if keep > 0 && record.IsFinished() && time.Since(record.Ended) > keep {
 				_ = hub.Drop(record.ID)
 			}
 		}
+		hub.sweep()
 	}
 }
 
-// Pack writes a local file or folder as a push tar: a folder's contents, or one file by its name.
-func Pack(writer io.Writer, from string) error {
-	info, statError := os.Stat(from)
-	if statError != nil {
-		return statError
+// sweep removes the tars no job uses.
+func (hub *Hub) sweep() {
+	used := map[string]bool{}
+	for _, record := range hub.Jobs() {
+		for _, sum := range record.Pushes {
+			used[sum] = true
+		}
 	}
-	dir, name := from, "."
-	if !info.IsDir() {
-		dir, name = filepath.Dir(from), filepath.Base(from)
-	}
-	root, openError := os.OpenRoot(dir)
-	if openError != nil {
-		return openError
-	}
-	defer func() { _ = root.Close() }()
-
-	entries, collectError := wire.Collect(root, name, 0)
-	if collectError != nil {
-		return collectError
-	}
-
-	return wire.WriteTarFS(writer, root, entries)
+	hub.tars.sweep(used)
 }

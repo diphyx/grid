@@ -14,7 +14,6 @@ import (
 //
 //	jobs/<id>/job       Record, JSON
 //	jobs/<id>/events    the job's events, the hub's own seq (wire.EventLog)
-//	jobs/<id>/push/<n>  the tar of push n, packed at submit
 //	jobs/<id>/files/    what was pulled
 
 // Hub job states: the node's end states, plus queued while no node has room.
@@ -36,6 +35,7 @@ const (
 type Record struct {
 	ID        string    `json:"id"`
 	Job       Job       `json:"job"`
+	Pushes    []string  `json:"pushes,omitempty"` // the sha256 of each push's tar, in the tar store
 	State     string    `json:"state"`
 	Message   string    `json:"message,omitempty"`
 	Node      string    `json:"node,omitempty"`     // ip:port of the current or last node
