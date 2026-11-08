@@ -52,10 +52,10 @@ Every job runs in its own folder on the node, its **space**. Files move in and o
 
 Push brings the inputs, the cmds work on them in place, and pull takes the outputs. When the job ends, the space is deleted.
 
-- Pushed files are packed when you submit, so the job no longer needs them on your side.
+- Pushed files are packed when you submit, so the job no longer needs them on your side. The hub keeps each packed input once and knows it again by its files' names, sizes, and times: an input that did not change is not packed again. `grid hub submit --repack` packs everything again.
 - A broken transfer resumes where it stopped; a checksum confirms the whole.
 - A path that would leave the space (`../`, absolute, a symlink out) is rejected.
-- Pulled files stay on the hub until `grid hub drop`, or until the hub's `history` has passed.
+- Pulled files stay on the hub until `grid hub drop`, or until the hub's `[jobs] expires` has passed.
 
 ## The Job File
 
@@ -80,6 +80,22 @@ path = "out"                     # in the space; a file or a folder
 
 Each part can repeat: several `[[push]]`, `[[steps]]` (run in order), or `[[pull]]` entries.
 
+### Shared Input
+
+A large input that many jobs use, like a model or a dataset, can be a **share**: the node keeps it for the jobs after, so it travels to each node once, not once per job.
+
+```toml
+[[push]]
+from = "./model"
+to = "model"                     # required: the share is linked here
+share = true
+```
+
+- The node keeps it read only and links it at `to`; a cmd reads it there like any folder, and must not write to it.
+- The same content is the same share, from any job; a changed input is a new one.
+- `to` cannot be the space itself. No other push or pull may be at `to` or under it, and a pull may not hold it: such a job is rejected at submit.
+- A node with its share off, or full, takes it as a normal push; the job runs either way. `grid hub tail` shows how each push went: `push model: hit` (the node had it), `installed` (sent, and kept), or `normal`.
+
 > **TOML rules,** for job files and both configs: an unknown key is an error that names the key and its line; top-level keys come before the first `[table]`; durations are strings, like `"10m"`, `"30d"`, or `"0"`.
 
 Submit it, and copy the results out when it ends:
@@ -99,7 +115,7 @@ grid hub pull <id> ./result
    │
    ▼
 ┌────────┐  a node with the tag   ┌─────────┐
-│ queued │ ─ has a free slot ───▶ │ running │ ◀─┐  node lost, retries left:
+│ queued │ ─ has room ──────────▶ │ running │ ◀─┐  node lost, retries left:
 └────────┘                        └────┬────┘ ──┘  start over on another node
                                        │
         ╭──────────────────────────────┼──────────────────────╮
@@ -113,7 +129,7 @@ grid hub pull <id> ./result
 
 | State     | Means                                                                   |
 | --------- | ----------------------------------------------------------------------- |
-| `queued`  | No node with the tag has a free slot yet; the hub tries again every 2 s |
+| `queued`  | No node with the tag has room yet; the hub tries again every 2 s        |
 | `running` | On a node: pushing, running the steps, or pulling                       |
 | `done`    | Every step succeeded and the files were pulled                          |
 | `failed`  | A step failed or ran past its `timeout`, or the node went away for good |
