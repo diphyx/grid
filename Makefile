@@ -52,8 +52,8 @@ build-local:
 	docker buildx build --target node --tag $(IMAGE)-node --load .
 	docker buildx build --target hub --tag $(IMAGE)-hub --load .
 
-# Tags main and pushes the tag; release.yml does the rest: tests, the binaries,
-# `go install github.com/diphyx/grid@$(VERSION)`, then the images.
+# Tags main and pushes the tag; release.yml does the rest: tests, the binaries, the Homebrew
+# formula, then the images.
 .PHONY: release
 release:
 	@test -n "$(VERSION)" || (echo 'usage: make release VERSION=v1.2.3' && exit 1)

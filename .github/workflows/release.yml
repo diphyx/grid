@@ -1,9 +1,8 @@
 name: release
 
 # A tag like v1.2.3 (`make release VERSION=v1.2.3`), in order: test.yml; a GitHub release with
-# the binaries, and the Go module proxy warmed, so `go install github.com/diphyx/grid@v1.2.3`
-# and `@latest` work at once; then the Homebrew formula in diphyx/homebrew-tap, and docker.yml,
-# so images exist only for a release that did.
+# the binaries; then the Homebrew formula in diphyx/homebrew-tap, and docker.yml, so images
+# exist only for a release that did.
 on:
   push:
     tags: ["v*"]
@@ -42,9 +41,6 @@ jobs:
           fi
           gh release create "$TAG" dist/* \
             --title "$TAG" --generate-notes --verify-tag "${flags[@]}"
-
-      - name: Warm the Go module proxy
-        run: curl -fsS "https://proxy.golang.org/github.com/diphyx/grid/@v/$TAG.info"
 
   # `brew install diphyx/tap/grid`: rewrites Formula/grid.rb in diphyx/homebrew-tap from the
   # release's checksums.txt. Prereleases are skipped; TAP_TOKEN is a fine-grained token with
