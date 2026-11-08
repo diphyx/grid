@@ -53,15 +53,17 @@ func test(args []string) int {
 const TEST_USAGE = `grid test: the grid test kit
 
   grid test node    --addr IP[:PORT] --key NODE_PUBLIC --private HUB_PRIVATE_FILE
-                    [--tag kit] [--slots N] [--listen IP:PORT] [--json]
+                    [--tag kit] [--limit N] [--share] [--listen IP:PORT] [--json]
       Acts as the hub and runs every check against a node.
       The node must trust the kit's key, serve --tag, and have the cmds in pkg/kit/cmds/node.toml.
+      --limit is its [jobs] limit; --share checks share pushes, for a node with [share] on.
       --listen also checks beat and post: the node needs signal = true and [hub] at that address.
 
   grid test hub     --listen IP[:PORT] --private NODE_PRIVATE_FILE --hub-ip IP --hub-key HUB_PUBLIC
-                    [--tag kit] [--slots 2] [--signal IP:PORT] [--for 60s] [--json]
+                    [--tag kit] [--limit 2] [--share] [--signal IP:PORT] [--for 60s] [--json]
       Acts as a node with the kit cmds. Point the hub at it and run jobs;
       every frame the hub sends is checked. Stops after --for or Ctrl-C.
+      --share keeps share pushes, in memory.
       --signal sends beat and post to the hub at that address.
 
   grid test vectors
@@ -86,7 +88,8 @@ func testNode(args []string) int {
 	key := flagSet.String("key", "", "node public key, or a path to it")
 	private := flagSet.String("private", "", "the kit's private key file (the node trusts its public key)")
 	tag := flagSet.String("tag", "kit", "tag the node serves for the kit")
-	slots := flagSet.Int("slots", 0, "the node's slots; 0 = skip the full check")
+	limit := flagSet.Int("limit", 0, "the node's [jobs] limit; 0 = skip the full check")
+	share := flagSet.Bool("share", false, "the node's share is on: check share pushes")
 	listen := flagSet.String("listen", "", "IP:PORT to accept beat and post")
 	asJSON := flagSet.Bool("json", false, "JSON output")
 	_ = flagSet.Parse(args)
@@ -102,7 +105,7 @@ func testNode(args []string) int {
 		fail(loadKeyError)
 	}
 	report := kit.NewReport(os.Stdout, *asJSON)
-	kit.TestNode(kit.NodeTarget{Addr: testAddr(*target), NodeKey: nodeKey, Hub: hubKey, Tag: *tag, Slots: *slots, Listen: *listen}, report)
+	kit.TestNode(kit.NodeTarget{Addr: testAddr(*target), NodeKey: nodeKey, Hub: hubKey, Tag: *tag, Limit: *limit, Share: *share, Listen: *listen}, report)
 
 	return testExit(report.Finish())
 }
@@ -114,7 +117,8 @@ func testHub(args []string) int {
 	hubIP := flagSet.String("hub-ip", "", "the hub's IP")
 	hubKey := flagSet.String("hub-key", "", "the hub's public key, or a path to it")
 	tag := flagSet.String("tag", "kit", "tag to serve")
-	slots := flagSet.Int("slots", 2, "slots")
+	limit := flagSet.Int("limit", 2, "jobs at once")
+	share := flagSet.Bool("share", false, "keep share pushes")
 	collector := flagSet.String("signal", "", "hub IP:PORT to send beat and post to")
 	dur := flagSet.Duration("for", 60*time.Second, "how long to run")
 	asJSON := flagSet.Bool("json", false, "JSON output")
@@ -135,7 +139,7 @@ func testHub(args []string) int {
 		fail(loadPrivateError)
 	}
 	report := kit.NewReport(os.Stdout, *asJSON)
-	fakeNode := &kit.FakeNode{Key: nodeKey, Peers: wire.Peers{*hubIP: hubPublic}, Tags: []string{*tag}, Slots: *slots, Report: report}
+	fakeNode := &kit.FakeNode{Key: nodeKey, Peers: wire.Peers{*hubIP: hubPublic}, Tags: []string{*tag}, Limit: *limit, Share: *share, Report: report}
 	if *collector != "" {
 		fakeNode.Hub, fakeNode.HubKey = testAddr(*collector), hubPublic
 	}

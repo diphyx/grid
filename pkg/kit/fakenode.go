@@ -19,7 +19,8 @@ type FakeNode struct {
 	Key     wire.Keypair
 	Peers   wire.Peers    // hub IP → hub key
 	Tags    []string      // default [kit]
-	Slots   int           // default 2
+	Limit   int           // jobs at once; default 2
+	Share   bool          // keep share pushes, in memory
 	Expires time.Duration // 0 = never
 	Hub     string        // ip:port to send beat and post; "" = no signal
 	HubKey  wire.Key
@@ -27,6 +28,7 @@ type FakeNode struct {
 
 	mutex    sync.Mutex
 	jobs     map[string]*fjob
+	shares   map[string]fshare // push id → its tar's entries
 	calls    map[string]*callStat
 	listener net.Listener
 	posts    chan postItem
@@ -49,6 +51,12 @@ type fjob struct {
 	changed chan struct{}
 	dropped bool
 	used    time.Time
+}
+
+// fshare is a share the fake node keeps.
+type fshare struct {
+	entries []wire.Entry
+	sum     []byte
 }
 
 type postItem struct {
@@ -77,10 +85,11 @@ func (fakeNode *FakeNode) init() {
 	if fakeNode.Tags == nil {
 		fakeNode.Tags = []string{"kit"}
 	}
-	if fakeNode.Slots == 0 {
-		fakeNode.Slots = 2
+	if fakeNode.Limit == 0 {
+		fakeNode.Limit = 2
 	}
 	fakeNode.jobs = map[string]*fjob{}
+	fakeNode.shares = map[string]fshare{}
 	fakeNode.calls = map[string]*callStat{}
 	fakeNode.posts = make(chan postItem, 1024)
 	fakeNode.stop = make(chan struct{})
@@ -273,10 +282,10 @@ func (fakeNode *FakeNode) open(request *wire.Request) error {
 	}
 	fakeNode.mutex.Lock()
 	count := fakeNode.usedLocked()
-	if count >= fakeNode.Slots {
+	if count >= fakeNode.Limit {
 		fakeNode.mutex.Unlock()
 
-		return wire.NewReject(wire.FULL, "%d of %d slots used", count, fakeNode.Slots)
+		return wire.NewReject(wire.FULL, "%d of %d jobs open", count, fakeNode.Limit)
 	}
 	id := make([]byte, 16)
 	rand.Read(id)

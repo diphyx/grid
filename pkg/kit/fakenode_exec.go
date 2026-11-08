@@ -26,7 +26,7 @@ func (fakeNode *FakeNode) emit(job *fjob, typ string, data any) {
 	job.changed = make(chan struct{})
 }
 
-var kitCmds = map[string]bool{"echo": true, "env": true, "fail": true, "sleep": true, "nap": true, "emit": true, "write": true}
+var kitCmds = map[string]bool{"echo": true, "env": true, "fail": true, "sleep": true, "nap": true, "emit": true, "write": true, "copy": true}
 
 func (fakeNode *FakeNode) exec(request *wire.Request) error {
 	var body wire.Exec
@@ -119,6 +119,17 @@ func (fakeNode *FakeNode) run(job *fjob, body wire.Exec, kill chan struct{}) {
 			fakeNode.emit(job, wire.EVENT_PREFIX+"kit.done", nil)
 			job.mutex.Unlock()
 			log("err", "not an event")
+		}
+	case "copy":
+		{
+			job.mutex.Lock()
+			from, ok := job.files[body.Args[0]]
+			if ok && len(body.Args) == 2 && wire.CheckPath(body.Args[1]) == nil {
+				job.files[body.Args[1]] = wire.Entry{Path: body.Args[1], Data: from.Data, ModTime: time.Now()}
+			} else {
+				end.State, end.Message = wire.STATE_FAILED, "usage: copy <from> <to>"
+			}
+			job.mutex.Unlock()
 		}
 	case "write":
 		{

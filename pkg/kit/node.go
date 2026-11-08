@@ -16,7 +16,8 @@ type NodeTarget struct {
 	NodeKey wire.Key     // the node's public key
 	Hub     wire.Keypair // the kit's key pair, as the hub
 	Tag     string       // default "kit"
-	Slots   int          // the node's slots; 0 = skip the full check
+	Limit   int          // the node's [jobs] limit; 0 = skip the full check
+	Share   bool         // the node's share is on: run the share checks
 	Listen  string       // ip:port to accept beat and post on; "" = skip signal checks
 	Wait    time.Duration
 }
@@ -55,6 +56,7 @@ func TestNode(target NodeTarget, report *Report) {
 	run.open(session)
 	run.exec(session)
 	run.files(session)
+	run.share(session)
 	run.drop(session)
 	if collector != nil {
 		run.signal(session, collector)
@@ -159,8 +161,8 @@ func (nodeRun *nodeRun) open(session *wire.Session) {
 	nodeRun.report.Check("§6", "stat unknown job → unknown", wantReject(session.Do(wire.CALL_STAT, wire.JobRef{Job: randJob()}, nil), wire.UNKNOWN))
 	_ = session.Do(wire.CALL_DROP, wire.JobRef{Job: job}, nil)
 
-	if nodeRun.target.Slots == 0 {
-		nodeRun.report.Skip("§6", "open past slots → full", "no --slots")
+	if nodeRun.target.Limit == 0 {
+		nodeRun.report.Skip("§6", "open past the limit → full", "no --limit")
 
 		return
 	}
@@ -170,16 +172,16 @@ func (nodeRun *nodeRun) open(session *wire.Session) {
 			_ = session.Do(wire.CALL_DROP, wire.JobRef{Job: jobID}, nil)
 		}
 	}()
-	for i := 0; i < nodeRun.target.Slots; i++ {
+	for i := 0; i < nodeRun.target.Limit; i++ {
 		jobID, checkError := openJob(session, nodeRun.target.Tag)
 		if checkError != nil {
-			nodeRun.report.Check("§6", "open past slots → full", fmt.Errorf("open %d of %d: %w", i+1, nodeRun.target.Slots, checkError))
+			nodeRun.report.Check("§6", "open past the limit → full", fmt.Errorf("open %d of %d: %w", i+1, nodeRun.target.Limit, checkError))
 
 			return
 		}
 		jobs = append(jobs, jobID)
 	}
-	nodeRun.report.Check("§6", "open past slots → full", wantReject(session.Do(wire.CALL_OPEN, wire.Open{Tag: nodeRun.target.Tag}, nil), wire.FULL))
+	nodeRun.report.Check("§6", "open past the limit → full", wantReject(session.Do(wire.CALL_OPEN, wire.Open{Tag: nodeRun.target.Tag}, nil), wire.FULL))
 }
 
 // §6 exec, tail, kill; §7; §8; §9

@@ -26,7 +26,7 @@ func (fakeNode *FakeNode) signal() {
 			fakeNode.mutex.Lock()
 			used := fakeNode.usedLocked()
 			fakeNode.mutex.Unlock()
-			doError := session.Do(wire.CALL_BEAT, wire.Beat{Tags: fakeNode.Tags, Free: uint64(fakeNode.Slots - used)}, nil)
+			doError := session.Do(wire.CALL_BEAT, wire.Beat{Tags: fakeNode.Tags, Free: uint64(fakeNode.Limit - used), Share: fakeNode.Share}, nil)
 			if doError != nil {
 				session.Close()
 				session = nil

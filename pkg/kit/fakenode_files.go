@@ -3,6 +3,7 @@ package kit
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"time"
 
@@ -22,6 +23,19 @@ func (fakeNode *FakeNode) push(request *wire.Request) error {
 	base := body.Path
 	if base == "" {
 		base = "."
+	}
+	if body.ID != "" && fakeNode.Share {
+		fakeNode.mutex.Lock()
+		share, isHave := fakeNode.shares[body.ID]
+		fakeNode.mutex.Unlock()
+		if isHave {
+			linkError := job.link(base, share.entries)
+			if linkError != nil {
+				return linkError
+			}
+
+			return pushHave(request, share)
+		}
 	}
 	job.mutex.Lock()
 	partial := job.partial[base]
@@ -73,22 +87,77 @@ func (fakeNode *FakeNode) push(request *wire.Request) error {
 				if readTarError != nil {
 					return wire.NewReject(wire.INVALID, "tar: %v", readTarError)
 				}
-				for _, entry := range entries {
-					if entry.Dir {
-						continue
-					}
-					path := entry.Path
-					if base != "." {
-						path = base + "/" + path
-					}
-					entry.Path = path
-					job.files[path] = entry
-				}
 				sum := sha256.Sum256(whole)
+				isShare := body.ID != "" && fakeNode.Share
+				if isShare && hex.EncodeToString(sum[:16]) != body.ID {
+					return wire.NewReject(wire.INVALID, "push: id %s is not the tar's", body.ID)
+				}
+				if isShare {
+					fakeNode.mutex.Lock()
+					fakeNode.shares[body.ID] = fshare{entries: entries, sum: sum[:]}
+					fakeNode.mutex.Unlock()
+				}
+				job.place(base, entries)
 
-				return request.OK(wire.PushOK{Sha256: sum[:]})
+				return request.OK(wire.PushOK{Sha256: sum[:], Share: isShare})
 			}
 		}
+	}
+}
+
+// pushHave answers a share the fake node has: have, then only end may come.
+func pushHave(request *wire.Request, share fshare) error {
+	dataError := request.Data(wire.PushOffset{Have: true})
+	if dataError != nil {
+		return nil
+	}
+	for {
+		envelope, nextError := request.Next()
+		if nextError != nil {
+			return nil
+		}
+		switch {
+		case envelope.Data != nil:
+			{
+				return wire.NewReject(wire.INVALID, "push: data after have")
+			}
+		case envelope.Cancel != nil:
+			{
+				return request.End(wire.Empty{})
+			}
+		case envelope.End != nil:
+			{
+				return request.OK(wire.PushOK{Sha256: share.sum, Share: true})
+			}
+		}
+	}
+}
+
+// link puts a share's files at base, where the node would link it; base must be free.
+func (job *fjob) link(base string, entries []wire.Entry) error {
+	job.mutex.Lock()
+	defer job.mutex.Unlock()
+
+	for path := range job.files {
+		if path == base || strings.HasPrefix(path, base+"/") {
+			return wire.NewReject(wire.INVALID, "push: %s is already in the space", base)
+		}
+	}
+	job.place(base, entries)
+
+	return nil
+}
+
+// place puts a tar's files under base; the caller holds job.mutex.
+func (job *fjob) place(base string, entries []wire.Entry) {
+	for _, entry := range entries {
+		if entry.Dir {
+			continue
+		}
+		if base != "." {
+			entry.Path = base + "/" + entry.Path
+		}
+		job.files[entry.Path] = entry
 	}
 }
 

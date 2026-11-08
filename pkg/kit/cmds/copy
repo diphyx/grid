@@ -1,0 +1,4 @@
+#!/bin/sh
+# kit cmd: copies the file $1 to $2, through a share link on the way
+mkdir -p "$(dirname "$2")"
+cat "$1" > "$2"

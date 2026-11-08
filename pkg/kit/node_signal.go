@@ -42,8 +42,8 @@ func (nodeRun *nodeRun) signal(session *wire.Session, collector *signalHub) {
 		body := beats[len(beats)-1]
 		if !contains(body.Tags, nodeRun.target.Tag) {
 			checkError = fmt.Errorf("beat tags %v, want %q", body.Tags, nodeRun.target.Tag)
-		} else if nodeRun.target.Slots > 0 && body.Free > uint64(nodeRun.target.Slots) {
-			checkError = fmt.Errorf("free %d > slots %d", body.Free, nodeRun.target.Slots)
+		} else if nodeRun.target.Limit > 0 && body.Free > uint64(nodeRun.target.Limit) {
+			checkError = fmt.Errorf("free %d > limit %d", body.Free, nodeRun.target.Limit)
 		}
 	}
 	nodeRun.report.Check("§6", "beat", checkError)

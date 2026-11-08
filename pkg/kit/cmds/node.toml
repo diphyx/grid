@@ -1,5 +1,6 @@
 # The kit cmds, for the node under test. Append to its config; KIT = the folder holding these
-# scripts. Its top-level keys need tags = ["kit"] and slots = 2.
+# scripts. Its config needs tags = ["kit"] and [jobs] limit = 2; for the share checks
+# (--share), a [share] limit too.
 
 [cmds.echo]
 exec = ["KIT/echo"]
@@ -22,3 +23,6 @@ exec = ["KIT/emit"]
 
 [cmds.write]
 exec = ["KIT/write"]
+
+[cmds.copy]
+exec = ["KIT/copy"]

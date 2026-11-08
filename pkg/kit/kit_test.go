@@ -24,7 +24,7 @@ func TestFakeNode(t *testing.T) {
 	}
 	sigAddr := sig.Addr().String()
 	sig.Close()
-	f := &FakeNode{Key: node, Peers: wire.Peers{"127.0.0.1": hub.Public}, Slots: 2, Hub: sigAddr, HubKey: hub.Public}
+	f := &FakeNode{Key: node, Peers: wire.Peers{"127.0.0.1": hub.Public}, Limit: 2, Share: true, Hub: sigAddr, HubKey: hub.Public}
 	go f.Serve(ln)
 	defer f.Close()
 
@@ -33,7 +33,7 @@ func TestFakeNode(t *testing.T) {
 		out = os.Stdout
 	}
 	r := NewReport(out, false)
-	TestNode(NodeTarget{Addr: ln.Addr().String(), NodeKey: node.Public, Hub: hub, Slots: 2, Listen: sigAddr, Wait: 10 * time.Second}, r)
+	TestNode(NodeTarget{Addr: ln.Addr().String(), NodeKey: node.Public, Hub: hub, Limit: 2, Share: true, Listen: sigAddr, Wait: 10 * time.Second}, r)
 	for _, x := range r.All {
 		if !x.Pass {
 			t.Errorf("%s %s: %s", x.Spec, x.Name, x.Note)
