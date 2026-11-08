@@ -36,7 +36,7 @@ hub                                 node
 | Hub → node | Does                     | In                                 | Out                         |
 | ---------- | ------------------------ | ---------------------------------- | --------------------------- |
 | `open`     | gets a job and its space | `tag`                              | `job`, `expires`            |
-| `push`     | puts files in            | `job`, `path?` + a tar             | `sha256`                    |
+| `push`     | puts files in            | `job`, `path?`, `id?` + a tar      | `sha256`, `share`           |
 | `exec`     | runs a cmd               | `job`, `cmd`, `args?`, `env?`      | —                           |
 | `tail`     | follows the events       | `job`, `after?`                    | events                      |
 | `stat`     | reads the state          | `job`                              | `cmd`, `state`, `message`   |
@@ -44,12 +44,12 @@ hub                                 node
 | `pull`     | takes files              | `job`, `path`, `since?`, `offset?` | file list + a tar, `sha256` |
 | `drop`     | ends the job             | `job`                              | —                           |
 
-| Node → hub, with `signal` | Does                        | In             |
-| ------------------------- | --------------------------- | -------------- |
-| `beat`                    | alive, every 5 s            | `tags`, `free` |
-| `post`                    | a state change, until acked | `job`, `event` |
+| Node → hub, with `signal` | Does                        | In                      |
+| ------------------------- | --------------------------- | ----------------------- |
+| `beat`                    | alive, every 5 s            | `tags`, `free`, `share` |
+| `post`                    | a state change, until acked | `job`, `event`          |
 
-Instead of an answer, any call can get a `reject` with a reason: `full` (no free slot), `running` (a cmd is already running), `unknown` (no such tag, job, or cmd), or `invalid` (bad input).
+Instead of an answer, any call can get a `reject` with a reason: `full` (no room for another job), `running` (a cmd is already running), `unknown` (no such tag, job, or cmd), or `invalid` (bad input).
 
 ## On the Wire
 
@@ -78,6 +78,26 @@ Instead of an answer, any call can get a `reject` with a reason: `full` (no free
 - Only the side that opened a connection makes calls on it. Several calls can run at once, told apart by `id`.
 - Files travel as tar streams that come out the same bytes every time, so a broken transfer resumes at an offset, and a `sha256` checks the whole.
 
+## Share Pushes
+
+A push the job marks `share` is kept by the node for the jobs after it, so the same input travels once per node, not once per job. Its `id` is the tar's sha256, first 16 bytes: the same id is the same content.
+
+```
+hub                                   node
+ │── push {job, path, id} ───────────▶│
+ │◀─ data {offset: 0, have: true} ────│  hit: it has the share, linked at path
+ │── end {} ─────────────────────────▶│  no bytes
+ │◀─ ok {sha256, share: true} ────────│
+
+ │◀─ data {offset, have: false} ──────│  miss: the tar comes as usual
+ │── data … end {} ──────────────────▶│
+ │◀─ ok {sha256, share: true} ────────│  kept, and linked at path
+```
+
+- The node checks a new share's id against the tar's sha256, makes it read only, and links it into the space at `path`: a symlink, or a junction on Windows. A cmd reads it there and must not write to it.
+- With its share off, full, or unable to link, the node takes the tar into the space as usual and answers `share: false`; the job runs either way.
+- A share stays while a job links it; after that, it goes when unused for the node's `[share] expires`, or, least recently hit first, when the share passes its `limit`.
+
 ## Who Dials Whom
 
 The hub always dials the node for job calls; the node dials the hub only for `beat` and `post`, with `signal`. [Setups](setups.md) shows it per setup.
@@ -86,11 +106,11 @@ The hub always dials the node for job calls; the node dials the hub only for `be
 
 The test kit checks that a hub or a node follows the protocol. It never looks at your code: it is the `grid` binary, talking to your running program over TCP, the way the other side would. So an implementation in any language, Node.js, Python, Rust, is tested the same way, and once it passes, it works with grid's own hub and node.
 
-| Run                 | The kit acts as | Checks                                                                |
-| ------------------- | --------------- | --------------------------------------------------------------------- |
-| `grid test vectors` | —               | prints the golden bytes, to check an encoder                          |
-| `grid test node`    | the hub         | a node: 76 checks, every call, state, event, file rule, beat and post |
-| `grid test hub`     | a node          | a hub: every frame and body it sends; that it drops its jobs          |
+| Run                 | The kit acts as | Checks                                                                       |
+| ------------------- | --------------- | ---------------------------------------------------------------------------- |
+| `grid test vectors` | —               | prints the golden bytes, to check an encoder                                 |
+| `grid test node`    | the hub         | a node: 87 checks, every call, state, event, file rule, share, beat and post |
+| `grid test hub`     | a node          | a hub: every frame and body it sends; that it drops its jobs                 |
 
 The exit code is the number of failed checks, up to 125; `--json` for CI.
 
@@ -107,20 +127,20 @@ Work in this order:
 npm test
 
 # then the kit, against your running node
-grid test node --addr 127.0.0.1 --key my-node.pub --private kit.key --slots 2 --json
+grid test node --addr 127.0.0.1 --key my-node.pub --private kit.key --limit 2 --share --json
 ```
 
 ### A Node
 
-1. Give the node the kit cmds: copy [`pkg/kit/cmds/`](https://github.com/diphyx/grid/tree/HEAD/pkg/kit/cmds) onto it and append `node.toml` from there to its config, with `KIT` replaced by that folder. Set `tags = ["kit"]` and `slots = 2`. These small scripts give known results: `fail` must end `failed`, `nap` must hit its `timeout`, `emit` must send events.
-2. Let it trust the kit: `grid key new kit`, then set the node's `[hub]` to `ip` = the kit's machine and `key` = `kit.pub`.
+1. Give the node the kit cmds: copy [`pkg/kit/cmds/`](https://github.com/diphyx/grid/tree/HEAD/pkg/kit/cmds) onto it and append `node.toml` from there to its config, with `KIT` replaced by that folder. Set `tags = ["kit"]`, `[jobs] limit = 2`, and a `[share] limit` for the share checks. These small scripts give known results: `fail` must end `failed`, `nap` must hit its `timeout`, `emit` must send events, `copy` must read a share.
+2. Let it trust the kit: `grid key new kit`, then set the node's `[hub]` to `ip` = the kit's machine and `trust` = `kit.pub`.
 3. Run:
 
 ```sh
-grid test node --addr 10.0.0.2 --key node.pub --private kit.key --slots 2 --listen 10.0.0.1:9430
+grid test node --addr 10.0.0.2 --key node.pub --private kit.key --limit 2 --share --listen 10.0.0.1:9430
 ```
 
-The kit opens jobs, pushes, runs the kit cmds, tails, kills, pulls, and drops, and checks every answer. `--listen` also checks `beat` and `post`: the node needs `signal = true`, and its `[hub]` `ip` and `port` set to that address (here `port = 9430`).
+The kit opens jobs, pushes, shares, runs the kit cmds, tails, kills, pulls, and drops, and checks every answer; `--share` runs the share checks, for a node with its share on. `--listen` also checks `beat` and `post`: the node needs `signal = true`, and its `[hub]` `ip` and `port` set to that address (here `port = 9430`).
 
 ### A Hub
 
@@ -128,4 +148,4 @@ The kit opens jobs, pushes, runs the kit cmds, tails, kills, pulls, and drops, a
 grid test hub --listen 0.0.0.0:9420 --private kit.key --hub-ip 10.0.0.1 --hub-key hub.pub --for 2m
 ```
 
-Add the kit to the hub's config as a `[[nodes]]` entry (its machine's `ip`, `key = "kit.pub"`, `tags = ["kit"]`), submit jobs with `tag = "kit"` that run the kit cmds, then read the report. When `--for` ends, it lists each call the hub made, any frame that broke the spec, and whether the hub dropped its jobs.
+Add the kit to the hub's config as a `[[nodes]]` entry (its machine's `ip`, `trust = "kit.pub"`, `tags = ["kit"]`), submit jobs with `tag = "kit"` that run the kit cmds, then read the report. When `--for` ends, it lists each call the hub made, any frame that broke the spec, and whether the hub dropped its jobs.
