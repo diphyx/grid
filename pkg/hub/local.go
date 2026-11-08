@@ -23,7 +23,11 @@ import (
 //	GET  /job/{id}            JobView
 //	GET  /tail/{id}?after=N   JSON lines: wire.JSONEvent, until the job ends
 //	GET  /files/{id}          the pulled files, a tar
-//	POST /jobs                multipart: "job" (JSON Job) + "push" parts (tars, in order) → {id}
+//	GET  /history?kind=K      []history.Entry, all kinds or one
+//	GET  /stored/{manifest}   {stored}: whether the hub has a tar for a source with that manifest
+//	POST /jobs                multipart: "job" (JSON Job), then per push, in order, a "push" part
+//	                          (a tar, its file name the source's manifest) or a "stored" part
+//	                          (a manifest the hub has) → {id}
 //	POST /kill/{id}           stop a running job
 //	POST /drop/{id}           forget a job and its files
 
@@ -185,6 +189,12 @@ func (hub *Hub) Mux() *http.ServeMux {
 		writer.Header().Set("Content-Type", "application/x-tar")
 		_ = write(writer)
 	})
+	mux.HandleFunc("GET /history", func(writer http.ResponseWriter, request *http.Request) {
+		writeJSON(writer, hub.history.Read(request.URL.Query().Get("kind")))
+	})
+	mux.HandleFunc("GET /stored/{manifest}", func(writer http.ResponseWriter, request *http.Request) {
+		writeJSON(writer, map[string]bool{"stored": hub.Stored(request.PathValue("manifest"))})
+	})
 	mux.HandleFunc("POST /jobs", hub.submitHTTP)
 	mux.HandleFunc("POST /kill/{id}", func(writer http.ResponseWriter, request *http.Request) {
 		writeResult(writer, hub.Kill(request.PathValue("id")))
@@ -196,7 +206,8 @@ func (hub *Hub) Mux() *http.ServeMux {
 	return mux
 }
 
-// submitHTTP reads a multipart job: the "job" part, then one "push" part per job.Push, in order.
+// submitHTTP reads a multipart job: the "job" part, then one "push" or "stored" part per
+// job.Push, in order.
 func (hub *Hub) submitHTTP(writer http.ResponseWriter, request *http.Request) {
 	reader, multipartError := request.MultipartReader()
 	if multipartError != nil {
@@ -205,7 +216,7 @@ func (hub *Hub) submitHTTP(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	var job *Job
-	var pushes []io.Reader
+	var pushes []Packed
 	var files []*os.File
 	defer func() {
 		for _, file := range files {
@@ -251,7 +262,17 @@ func (hub *Hub) submitHTTP(writer http.ResponseWriter, request *http.Request) {
 					return
 				}
 				_, _ = file.Seek(0, io.SeekStart)
-				pushes = append(pushes, file)
+				pushes = append(pushes, Packed{Manifest: part.FileName(), Tar: file})
+			}
+		case "stored":
+			{
+				manifest, readError := io.ReadAll(io.LimitReader(part, 128))
+				if readError != nil {
+					http.Error(writer, readError.Error(), http.StatusBadRequest)
+
+					return
+				}
+				pushes = append(pushes, Packed{Manifest: string(manifest)})
 			}
 		}
 	}
