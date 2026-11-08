@@ -3,6 +3,7 @@ package hub
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -11,33 +12,76 @@ import (
 	"github.com/diphyx/grid/pkg/wire"
 )
 
-// push sends one packed tar; the node says how much it already has (§10).
-func (hub *Hub) push(session *wire.Session, stop <-chan struct{}, nodeJob, to, path string) error {
-	file, openError := os.Open(path)
+// How a push went, in the job's notes.
+const (
+	PUSHED_HIT       = "hit"       // the node had the share: no bytes sent
+	PUSHED_INSTALLED = "installed" // sent, and now in the node's share
+	PUSHED_NORMAL    = "normal"    // sent into the space
+)
+
+// push sends one tar from the store, by its sha256; with an id, a share push. The node says how
+// much it already has (§10), or that it has the share.
+func (hub *Hub) push(session *wire.Session, stop <-chan struct{}, nodeJob, to, sum, id string) (string, error) {
+	file, openError := os.Open(hub.tars.path(sum))
 	if openError != nil {
-		return openError
+		return "", openError
 	}
 	defer func() { _ = file.Close() }()
 
-	call, startError := session.Start(wire.CALL_PUSH, wire.Push{Job: nodeJob, Path: to})
+	call, startError := session.Start(wire.CALL_PUSH, wire.Push{Job: nodeJob, Path: to, ID: id})
 	if startError != nil {
-		return startError
+		return "", startError
 	}
 	defer call.Close()
 
 	first, nextError := call.Next()
 	if nextError != nil {
-		return nextError
+		return "", nextError
 	}
 	if first.Reject != nil {
-		return first.Reject
+		return "", first.Reject
 	}
 	var offset wire.PushOffset
 	unmarshalError := wire.Unmarshal(first.Data, &offset)
 	if unmarshalError != nil {
-		return fmt.Errorf("push: %w", unmarshalError)
+		return "", fmt.Errorf("push: %w", unmarshalError)
 	}
-	_, seekError := file.Seek(int64(offset.Offset), io.SeekStart)
+	if !offset.Have {
+		sendError := sendFrom(call, stop, file, int64(offset.Offset))
+		if sendError != nil {
+			return "", sendError
+		}
+	}
+	endError := call.End(wire.Empty{})
+	if endError != nil {
+		return "", endError
+	}
+	var pushed wire.PushOK
+	replyError := call.Reply(&pushed)
+	if replyError != nil {
+		return "", replyError
+	}
+	// the store's file is named by its sha256, so it need not be read again
+	if hex.EncodeToString(pushed.Sha256) != sum {
+		return "", errors.New("push: sha256 differs")
+	}
+	switch {
+	case offset.Have:
+		{
+			return PUSHED_HIT, nil
+		}
+	case pushed.Share:
+		{
+			return PUSHED_INSTALLED, nil
+		}
+	}
+
+	return PUSHED_NORMAL, nil
+}
+
+// sendFrom streams the file from offset in chunks, until it ends or stop closes.
+func sendFrom(call *wire.Call, stop <-chan struct{}, file *os.File, offset int64) error {
+	_, seekError := file.Seek(offset, io.SeekStart)
 	if seekError != nil {
 		return seekError
 	}
@@ -62,35 +106,12 @@ func (hub *Hub) push(session *wire.Session, stop <-chan struct{}, nodeJob, to, p
 			}
 		}
 		if errors.Is(readError, io.EOF) {
-			break
+			return nil
 		}
 		if readError != nil {
 			return readError
 		}
 	}
-	endError := call.End(wire.Empty{})
-	if endError != nil {
-		return endError
-	}
-	var pushed wire.PushOK
-	replyError := call.Reply(&pushed)
-	if replyError != nil {
-		return replyError
-	}
-	_, rewindError := file.Seek(0, io.SeekStart)
-	if rewindError != nil {
-		return rewindError
-	}
-	hash := sha256.New()
-	_, hashError := io.Copy(hash, file)
-	if hashError != nil {
-		return hashError
-	}
-	if !bytes.Equal(hash.Sum(nil), pushed.Sha256) {
-		return errors.New("push: sha256 differs")
-	}
-
-	return nil
 }
 
 // pull takes one path into the job's files. The partial stream stays on disk, so a broken pull

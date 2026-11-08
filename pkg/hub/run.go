@@ -3,9 +3,9 @@ package hub
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
+	"github.com/diphyx/grid/pkg/history"
 	"github.com/diphyx/grid/pkg/wire"
 )
 
@@ -126,14 +126,19 @@ func (hub *Hub) settle(job *entry, on *link, result outcome) {
 		record.State, record.Message, record.Ended = result.state, result.message, time.Now()
 	})
 	hub.log.Debug("job end", "job", record.ID, "state", result.state, "message", result.message)
+	hub.history.Add(history.Entry{Kind: history.KIND_JOB, Event: result.state, Subject: record.ID, Message: result.message, Took: time.Since(record.Submitted)})
 }
 
 // place opens the job on the first node that takes it; while none does, the job stays queued.
 func (hub *Hub) place(job *entry) (*link, string, error) {
 	tag := job.snapshot().Job.Tag
+	isSharing := false
+	for _, push := range job.snapshot().Job.Push {
+		isSharing = isSharing || push.Share
+	}
 	isWaitingNoted := false
 	for {
-		for _, candidate := range hub.candidates(tag, nil) {
+		for _, candidate := range hub.candidates(tag, nil, isSharing) {
 			session, connectError := candidate.connect(hub.key)
 			if connectError != nil {
 				continue
@@ -180,13 +185,28 @@ func (hub *Hub) attempt(job *entry, on *link) outcome {
 	defer follow.close()
 
 	if !record.Pushed {
+		if len(record.Pushes) != len(record.Job.Push) {
+			return outcome{state: STATE_FAILED, message: "push: its packed inputs are missing"}
+		}
 		for i, push := range record.Job.Push {
+			sum, id := record.Pushes[i], ""
+			if push.Share {
+				id = sum[:32] // the push id: the tar's sha256, first 16 bytes
+			}
+			how := ""
 			pushError := hub.call(job.stop, on, func(session *wire.Session) error {
-				return hub.push(session, job.stop, record.NodeJob, push.To, job.path("push/"+strconv.Itoa(i)))
+				var transferError error
+				how, transferError = hub.push(session, job.stop, record.NodeJob, push.To, sum, id)
+
+				return transferError
 			})
 			if pushError != nil {
 				return hub.failure(job, pushError, "push "+push.From)
 			}
+			if push.Share {
+				on.setShare(how != PUSHED_NORMAL, "push reply")
+			}
+			job.note("push " + spacePath(push.To) + ": " + how)
 		}
 		if len(record.Job.Push) > 0 {
 			job.note("pushed")

@@ -2,10 +2,12 @@ package hub
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/diphyx/grid/pkg/history"
 	"github.com/diphyx/grid/pkg/wire"
 )
 
@@ -20,6 +22,7 @@ type link struct {
 	peer    Peer
 	address string
 	key     wire.Key
+	history *history.Log
 
 	mutex        sync.Mutex
 	dialing      sync.Mutex // one dial at a time, so calls share one session
@@ -30,6 +33,8 @@ type link struct {
 	lastSeen     time.Time
 	failingSince time.Time
 	running      int
+	share        bool // its share is on: the config's hint, then what the node says
+	isLostNoted  bool // its loss is in the history
 }
 
 // NodeView is `grid hub nodes`.
@@ -39,6 +44,7 @@ type NodeView struct {
 	Online   bool      `json:"online"`
 	Lost     bool      `json:"lost"`
 	Signal   bool      `json:"signal"` // it sends beat
+	Share    bool      `json:"share"`  // its share is on, as far as the hub knows
 	Free     *uint64   `json:"free,omitempty"`
 	Running  int       `json:"running"`
 	LastSeen time.Time `json:"last_seen,omitzero"`
@@ -87,6 +93,46 @@ func (link *link) seen() {
 
 	link.lastSeen = time.Now()
 	link.failingSince = time.Time{}
+	link.backLocked()
+}
+
+// backLocked notes a node found again after it was lost; the caller holds link.mutex.
+func (link *link) backLocked() {
+	if link.isLostNoted {
+		link.isLostNoted = false
+		link.history.Add(history.Entry{Kind: history.KIND_NODE, Event: "online", Subject: link.address})
+	}
+}
+
+// lost notes, once, that the node is lost.
+func (link *link) lost() {
+	link.mutex.Lock()
+	defer link.mutex.Unlock()
+
+	if !link.isLostNoted {
+		link.isLostNoted = true
+		link.history.Add(history.Entry{Kind: history.KIND_NODE, Event: "lost", Subject: link.address})
+	}
+}
+
+// setShare records whether the node's share is on, as a push reply or a beat says; a change is
+// noted, with the config's hint when they differ.
+func (link *link) setShare(isOn bool, from string) {
+	link.mutex.Lock()
+	defer link.mutex.Unlock()
+
+	if link.share == isOn {
+		return
+	}
+	link.share = isOn
+	event, message := "share off", from
+	if isOn {
+		event = "share on"
+	}
+	if isOn != link.peer.Share {
+		message += fmt.Sprintf("; the config says share = %t", link.peer.Share)
+	}
+	link.history.Add(history.Entry{Kind: history.KIND_NODE, Event: event, Subject: link.address, Message: message})
 }
 
 // failed marks a call that did not reach the node.
@@ -100,12 +146,13 @@ func (link *link) failed() {
 }
 
 // beat records a beat from the node.
-func (link *link) beat(free uint64) {
+func (link *link) beat(beat wire.Beat) {
 	link.mutex.Lock()
-	defer link.mutex.Unlock()
-
-	link.hasBeat, link.lastBeat, link.free = true, time.Now(), free
+	link.hasBeat, link.lastBeat, link.free = true, time.Now(), beat.Free
 	link.lastSeen, link.failingSince = link.lastBeat, time.Time{}
+	link.backLocked()
+	link.mutex.Unlock()
+	link.setShare(beat.Share, "beat")
 }
 
 // isLost applies the rule in docs/job.md, "When Things Fail".
@@ -125,7 +172,7 @@ func (link *link) view() NodeView {
 	link.mutex.Lock()
 	defer link.mutex.Unlock()
 
-	view := NodeView{Addr: link.address, Tags: link.peer.Tags, Lost: lost, Signal: link.hasBeat, Running: link.running, LastSeen: link.lastSeen}
+	view := NodeView{Addr: link.address, Tags: link.peer.Tags, Lost: lost, Signal: link.hasBeat, Share: link.share, Running: link.running, LastSeen: link.lastSeen}
 	view.Online = !lost && link.failingSince.IsZero() && !link.lastSeen.IsZero()
 	if link.hasBeat {
 		free := link.free
@@ -145,10 +192,10 @@ func (link *link) hasTag(tag string) bool {
 	return false
 }
 
-// candidates lists the nodes to try for a tag, skipped ones aside: the most free first, then
-// the fewest jobs from this hub, ties round robin by turn; lost ones last, since only a call
-// finds a node without beats again.
-func (hub *Hub) candidates(tag string, skip map[string]bool) []*link {
+// candidates lists the nodes to try for a tag, skipped ones aside: for a job with a share push,
+// those with share on first; then the most free, then the fewest jobs from this hub, ties
+// round robin by turn; lost ones last, since only a call finds a node without beats again.
+func (hub *Hub) candidates(tag string, skip map[string]bool, isSharing bool) []*link {
 	hub.mutex.Lock()
 	turn := hub.turn
 	hub.turn++
@@ -156,6 +203,7 @@ func (hub *Hub) candidates(tag string, skip map[string]bool) []*link {
 	type scored struct {
 		link    *link
 		lost    bool
+		share   bool
 		free    int64
 		running int
 		order   int
@@ -171,13 +219,16 @@ func (hub *Hub) candidates(tag string, skip map[string]bool) []*link {
 		if candidate.hasBeat {
 			free = int64(candidate.free)
 		}
-		running := candidate.running
+		running, share := candidate.running, candidate.share && isSharing
 		candidate.mutex.Unlock()
-		list = append(list, scored{candidate, lost, free, running, (i + len(hub.links) - turn%max(len(hub.links), 1)) % max(len(hub.links), 1)})
+		list = append(list, scored{candidate, lost, share, free, running, (i + len(hub.links) - turn%max(len(hub.links), 1)) % max(len(hub.links), 1)})
 	}
 	sort.SliceStable(list, func(left, right int) bool {
 		if list[left].lost != list[right].lost {
 			return !list[left].lost
+		}
+		if list[left].share != list[right].share {
+			return list[left].share
 		}
 		if list[left].free != list[right].free {
 			return list[left].free > list[right].free
@@ -231,6 +282,8 @@ func (hub *Hub) call(stop <-chan struct{}, on *link, callback func(session *wire
 			on.failed()
 		}
 		if on.isLost() {
+			on.lost()
+
 			return errLost
 		}
 		select {

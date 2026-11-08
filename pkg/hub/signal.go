@@ -62,7 +62,7 @@ func (hub *Hub) signal(from *link, request *wire.Request) {
 				return
 			}
 			if from != nil {
-				from.beat(beat.Free)
+				from.beat(beat)
 			}
 		}
 	case wire.CALL_POST:

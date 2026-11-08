@@ -1,8 +1,12 @@
 package hub
 
 import (
+	"archive/tar"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path"
 	"strings"
 
 	"github.com/diphyx/grid/pkg/wire"
@@ -18,10 +22,12 @@ type Job struct {
 	Retries int    `toml:"retries" json:"retries,omitempty"`
 }
 
-// Push is a local file or folder to put into the space, under To.
+// Push is a local file or folder to put into the space, under To. A share push goes into the
+// node's share, kept for the jobs after, and is linked at To.
 type Push struct {
-	From string `toml:"from" json:"from"`
-	To   string `toml:"to" json:"to,omitempty"`
+	From  string `toml:"from" json:"from"`
+	To    string `toml:"to" json:"to,omitempty"`
+	Share bool   `toml:"share" json:"share,omitempty"`
 }
 
 // Pull is a file or folder in the space to bring back to the hub, after the steps.
@@ -88,6 +94,108 @@ func (job *Job) Check() error {
 	if job.Retries < 0 {
 		errs = append(errs, errors.New("retries: not negative"))
 	}
+	errs = append(errs, job.checkShares()...)
 
 	return errors.Join(errs...)
+}
+
+// checkShares checks what a share push needs: a To that is not the space, and no other push or
+// pull at it or under it, since a link stands there. A push into a folder above it is checked
+// at submit, against its tar.
+func (job *Job) checkShares() []error {
+	var errs []error
+	for i, share := range job.Push {
+		if !share.Share {
+			continue
+		}
+		if share.To == "" || share.To == "." {
+			errs = append(errs, fmt.Errorf("push[%d].to: a share needs one, not the space", i))
+
+			continue
+		}
+		for other, push := range job.Push {
+			if other != i && isUnder(spacePath(push.To), share.To) {
+				errs = append(errs, fmt.Errorf("push[%d].to: %q is in push[%d], a share", other, push.To, i))
+			}
+		}
+		for other, pull := range job.Pull {
+			if isUnder(pull.Path, share.To) || isUnder(share.To, pull.Path) {
+				errs = append(errs, fmt.Errorf("pull[%d].path: %q takes in push[%d], a share", other, pull.Path, i))
+			}
+		}
+	}
+
+	return errs
+}
+
+// checkTars checks, against their tars, the pushes into a folder above a share push: none may
+// bring an entry at the share's To or under it.
+func (job *Job) checkTars(store *tars, sums []string) error {
+	var errs []error
+	for i, share := range job.Push {
+		if !share.Share {
+			continue
+		}
+		for other, push := range job.Push {
+			to := spacePath(push.To)
+			if other == i || !isUnder(share.To, to) {
+				continue
+			}
+			inside := strings.TrimPrefix(share.To, to+"/")
+			if to == "." {
+				inside = share.To
+			}
+			names, readError := tarNames(store.path(sums[other]))
+			if readError != nil {
+				return fmt.Errorf("push[%d]: %w", other, readError)
+			}
+			for _, name := range names {
+				if isUnder(name, inside) {
+					errs = append(errs, fmt.Errorf("push[%d]: %q is in push[%d], a share", other, path.Join(to, name), i))
+
+					break
+				}
+			}
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// tarNames lists the entries of a tar file, without reading their contents.
+func tarNames(file string) ([]string, error) {
+	opened, openError := os.Open(file)
+	if openError != nil {
+		return nil, openError
+	}
+	defer func() { _ = opened.Close() }()
+
+	var names []string
+	reader := tar.NewReader(opened)
+	for {
+		header, nextError := reader.Next()
+		if errors.Is(nextError, io.EOF) {
+			return names, nil
+		}
+		if nextError != nil {
+			return nil, nextError
+		}
+		names = append(names, strings.TrimSuffix(header.Name, "/"))
+	}
+}
+
+// spacePath is a push's To, "" being the space.
+func spacePath(to string) string {
+	if to == "" {
+		return "."
+	}
+
+	return to
+}
+
+// isUnder reports whether path is folder or under it; "." holds every path.
+func isUnder(path, folder string) bool {
+	path, folder = strings.TrimSuffix(path, "/"), strings.TrimSuffix(folder, "/")
+
+	return folder == "." || path == folder || strings.HasPrefix(path, folder+"/")
 }
