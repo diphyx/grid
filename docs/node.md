@@ -9,16 +9,25 @@ A node works for one hub. It runs each job in its own space, using only the cmds
 The node's config, `/etc/grid/node.toml`, names its hub and the cmds it offers:
 
 ```toml
-private = "/etc/grid/node.key"   # its own private key
-tags = ["build"]                 # the kinds of work it does
-slots = 4                        # jobs at once
-expires = "10m"                  # drop a job left idle this long
+identity = "/etc/grid/node.key"     # who it is: its private key
+tags = ["build"]                    # the kinds of work it does
 
-[hub]                            # the one hub allowed to send it jobs
+[hub]                               # the one hub allowed to send it jobs
 ip = "10.0.0.1"
-key = "/etc/grid/hub.pub"
+trust = "/etc/grid/hub.pub"         # whom it accepts: the hub's public key
 
-[cmds.build]                     # a cmd it offers, named "build"
+[jobs]
+limit = 4                           # jobs at once
+expires = "10m"                     # drop a job left idle this long
+
+[history]
+expires = "720h"                    # keep the event log this long
+
+[share]
+limit = "10GB"                      # keep share pushes, up to this much
+expires = "168h"                    # drop a share no job used this long
+
+[cmds.build]                        # a cmd it offers, named "build"
 exec = ["make", "-j8"]
 timeout = "1h"
 
@@ -26,18 +35,25 @@ timeout = "1h"
 exec = ["/opt/cmds/test"]
 ```
 
-| Option          | Default         | Description                                                                     |
-| --------------- | --------------- | ------------------------------------------------------------------------------- |
-| `private`       | required        | Path to the node's private key                                                  |
-| `tags`          | required        | The kinds of work it does                                                       |
-| `[hub]`         | required        | The hub allowed to send it jobs: `ip`, `key`, and `port`                        |
-| `[cmds.<name>]` |                 | A cmd it offers: `exec` is the command line, `timeout` its limit                |
-| `slots`         | `1`             | Jobs at once; when all are taken, new jobs wait on the hub                      |
-| `expires`       | `"0"`           | Delete a job left idle this long; `"0"` = never; a running cmd is never cut off |
-| `history`       | `"0"`           | How long finished cmds stay listed; `"0"` = forever                             |
-| `signal`        | `false`         | Connect back to the hub to send heartbeats and step updates                     |
-| `port`          | `9420`          | The port it listens on                                                          |
-| `data`          | `/var/lib/grid` | Where it keeps spaces, events, and history                                      |
+| Option          | Default  | Description                                                      |
+| --------------- | -------- | ---------------------------------------------------------------- |
+| `identity`      | required | Path to the node's private key                                   |
+| `tags`          | required | The kinds of work it does                                        |
+| `[hub]`         | required | The hub allowed to send it jobs: `ip`, `trust`, and `port`       |
+| `[cmds.<name>]` |          | A cmd it offers: `exec` is the command line, `timeout` its limit |
+| `signal`        | `false`  | Connect back to the hub to send heartbeats and step updates      |
+| `port`          | `9420`   | The port it listens on                                           |
+
+Its state is in three scopes, each with the same keys:
+
+| Scope       | `path`, default              | `limit`, default                                                | `expires`, default                                                 |
+| ----------- | ---------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `[jobs]`    | `/var/lib/grid/node/jobs`    | `1`: jobs at once; when all are taken, new jobs wait on the hub | `"0"`: delete a job idle this long; a running cmd is never cut off |
+| `[history]` | `/var/lib/grid/node/history` | `"100MB"`: past it, the oldest entries go; `"0"` = off          | `"0"`: drop entries older than this                                |
+| `[share]`   | `/var/lib/grid/node/share`   | `"0"`: the share's size; `"0"` = off                            | `"0"`: drop a share no job used this long                          |
+
+- `"0"` as `expires` is never. Durations are strings, like `"10m"`, `"720h"`, or `"30d"`.
+- Sizes are strings with a unit, `B`, `KB`, `MB`, `GB`, or `TB`, in binary: `1GB` is 2³⁰ bytes. A bare number is an error.
 
 Open TCP `9420` to the hub's IP, and start it:
 
@@ -46,6 +62,33 @@ grid node run
 ```
 
 The file follows the same [TOML rules](job.md#the-job-file) as job files. The config is read at start: after a change, restart the node. Its jobs are kept; a cmd that was running ends `failed` with "node restarted", which fails its job.
+
+## Share
+
+A job can mark a push `share` ([Job](job.md#shared-input)): the node keeps it in its share, read only, and links it into each job that pushes the same content. The input travels once to the node, not once per job.
+
+- **A share is its content.** Its id is the tar's sha256; the same files are the same share, from any job.
+- **Linked, not copied.** In the space, the push's `to` is a link to the share: a symlink, or a junction on Windows. A cmd reads it like any folder, and must not write to it.
+- **Kept while used.** A share a job links stays while that job does. After that, it goes once no job used it for `expires`, or, least recently used first, when the share would pass its `limit`.
+- **Optional.** With `[share]` off, too full, or a share that cannot be linked, the push goes into the space as usual, and the hub knows from the reply. The job runs either way.
+
+## History
+
+The node keeps an event log, read with `grid node history`:
+
+| Kind    | Events                                                                |
+| ------- | --------------------------------------------------------------------- |
+| `job`   | a cmd finished, a job dropped or expired, with how long it took       |
+| `share` | a share installed or removed, and why                                 |
+| `node`  | the node started or stopped                                           |
+| `hub`   | the hub connected or disconnected, with `signal`; a refused handshake |
+
+```
+AT                   KIND   EVENT    SUBJECT                                 TOOK     MESSAGE
+2026-11-08 10:01:58  share  install  9f3ac01b7e4d2a6c8b5f0e1d3a7c21e4        -        2GB
+2026-11-08 10:02:53  job    done     a1b2c3d4e5f60718293a4b5c6d7e8f90/build  42.318s
+2026-11-08 10:16:20  job    drop     a1b2c3d4e5f60718293a4b5c6d7e8f90        1m5s
+```
 
 ## Cmds
 
@@ -117,7 +160,12 @@ echo '[stage] name=test note="half way there"' >> "$GRID_EVENTS"
 At the hub, the event's type is the name with `evt.` in front, so a cmd's names never clash with grid's own; the pairs are its data, always as text. A program reading `grid hub tail --json` gets:
 
 ```json
-{"seq":7,"time":1762531469651,"type":"evt.progress","data":{"percent":"50"}}
+{
+  "seq": 7,
+  "time": 1762531469651,
+  "type": "evt.progress",
+  "data": { "percent": "50" }
+}
 ```
 
 A line that is not an event, like one without `[name]`, arrives as an `err` line instead, so a mistake shows up in the output and the job carries on. Events arrive within a moment of being written, and always before the step ends.
@@ -128,13 +176,14 @@ Results do not go here: what a job produces goes in files, which you [pull](job.
 
 Every command but `run` talks to the node on the same machine, and uses the node's own job ids, which differ from the hub's.
 
-| Command               | Options           | Does                                   |
-| --------------------- | ----------------- | -------------------------------------- |
-| `grid node run`       | `--config <file>` | Start the node                         |
-| `grid node status`    |                   | Its tags, slots, uptime, hub connected |
-| `grid node jobs`      | `--history`       | Current jobs, or finished cmds         |
-| `grid node job <id>`  |                   | One job: its cmds, files, state        |
-| `grid node tail <id>` | `--after N`       | Follow a job's events                  |
+| Command               | Options           | Does                                         |
+| --------------------- | ----------------- | -------------------------------------------- |
+| `grid node run`       | `--config <file>` | Start the node                               |
+| `grid node status`    |                   | Its tags, jobs, share, uptime, hub connected |
+| `grid node jobs`      |                   | Its open jobs                                |
+| `grid node history`   | `--kind K`        | The event log: `job`, `share`, `node`, `hub` |
+| `grid node job <id>`  |                   | One job: its cmds, files, state              |
+| `grid node tail <id>` | `--after N`       | Follow a job's events                        |
 
 ## Docker
 
@@ -146,4 +195,4 @@ COPY cmds/ /opt/cmds/
 COPY node.toml /etc/grid/node.toml
 ```
 
-The image runs `grid node run`, checks its health with `grid node status`, and runs as the non-root user `grid` (uid `100`), which the cmds run as too. Keep keys in `/etc/grid`, readable by that user, and mount a volume at `/var/lib/grid` for state.
+The image runs `grid node run`, checks its health with `grid node status`, and runs as the non-root user `grid` (uid `100`), which the cmds run as too. Keep keys in `/etc/grid`, readable by that user, and mount a volume at `/var/lib/grid` for state: the defaults are under `/var/lib/grid/node`.
