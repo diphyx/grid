@@ -115,31 +115,46 @@ func TestHubAndNode(t *testing.T) {
 	nodePort, hubPort := freePort(t), freePort(t)
 	nodeSock, hubSock := filepath.Join(dir, "n.sock"), filepath.Join(dir, "h.sock")
 
-	node := fmt.Sprintf(`private = "%[1]s/node.key"
+	node := fmt.Sprintf(`identity = "%[1]s/node.key"
 port = %[2]d
 tags = ["kit"]
-slots = 2
 signal = true
-data = "%[1]s/ndata"
 socket = %[3]q
 
 [hub]
 ip = "127.0.0.1"
 port = %[4]d
-key = "%[1]s/hub.pub"
+trust = "%[1]s/hub.pub"
+
+[jobs]
+path = "%[1]s/ndata/jobs"
+limit = 2
+
+[history]
+path = "%[1]s/ndata/history"
+
+[share]
+path = "%[1]s/ndata/share"
+limit = "64MB"
 `, dir, nodePort, nodeSock, hubPort) + strings.ReplaceAll(mustRead(t, filepath.Join(cmds, "node.toml")), "KIT", cmds)
 	os.WriteFile(filepath.Join(dir, "node.toml"), []byte(node), 0o644)
-	hub := fmt.Sprintf(`private = "%[1]s/hub.key"
+	hub := fmt.Sprintf(`identity = "%[1]s/hub.key"
 signal = true
 port = %[2]d
-data = "%[1]s/hdata"
 socket = %[3]q
+
+[jobs]
+path = "%[1]s/hdata/jobs"
+
+[history]
+path = "%[1]s/hdata/history"
 
 [[nodes]]
 tags = ["kit"]
 ip = "127.0.0.1"
 port = %[4]d
-key = "%[1]s/node.pub"
+trust = "%[1]s/node.pub"
+share = true
 `, dir, hubPort, hubSock, nodePort)
 	os.WriteFile(filepath.Join(dir, "hub.toml"), []byte(hub), 0o644)
 
@@ -165,6 +180,16 @@ path = "out"
 [[pull]]
 path = "result.json"
 `), 0o644)
+	os.WriteFile(filepath.Join(dir, "job", "share.toml"), []byte(`tag = "kit"
+
+[[push]]
+from = "./src"
+to = "model"
+share = true
+
+[[steps]]
+cmd = "echo"
+`), 0o644)
 	os.WriteFile(filepath.Join(dir, "job", "sleep.toml"), []byte("tag = \"kit\"\n\n[[steps]]\ncmd = \"sleep\"\nargs = [\"30\"]\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "job", "fail.toml"), []byte("tag = \"kit\"\n\n[[steps]]\ncmd = \"fail\"\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "job", "bad.toml"), []byte("tag = \"kit\"\nretry = 2\n\n[[steps]]\ncmd = \"echo\"\n"), 0o644)
@@ -175,7 +200,7 @@ path = "result.json"
 
 	// submit --wait follows the job and exits 0 on done
 	out := mustGrid(t, "hub", "submit", filepath.Join(dir, "job", "build.toml"), "--wait", h)
-	for _, want := range []string{"job  queued", "hub  pushed", "cmd  done write", "out  done", "hub  pulled", "job  done"} {
+	for _, want := range []string{"job  queued", "push src: normal", "hub  pushed", "cmd  done write", "out  done", "hub  pulled", "job  done"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("submit --wait: no %q in\n%s", want, out)
 		}
@@ -183,8 +208,22 @@ path = "result.json"
 	id := strings.SplitN(out, "\n", 2)[0]
 
 	// views
-	if out := mustGrid(t, "hub", "jobs", "--history", h); !strings.Contains(out, id) || !strings.Contains(out, "done") {
-		t.Errorf("jobs --history:\n%s", out)
+	if out := mustGrid(t, "hub", "jobs", h); !strings.Contains(out, id) || !strings.Contains(out, "done") {
+		t.Errorf("jobs:\n%s", out)
+	}
+
+	// a share push: installed on the node once, then hit; the hub packs it once
+	if out := mustGrid(t, "hub", "submit", filepath.Join(dir, "job", "share.toml"), "--wait", h); !strings.Contains(out, "push model: installed") {
+		t.Errorf("first share job:\n%s", out)
+	}
+	if out := mustGrid(t, "hub", "submit", filepath.Join(dir, "job", "share.toml"), "--wait", h); !strings.Contains(out, "push model: hit") {
+		t.Errorf("second share job:\n%s", out)
+	}
+	if out := mustGrid(t, "hub", "submit", filepath.Join(dir, "job", "share.toml"), "--wait", "--repack", h); !strings.Contains(out, "push model: hit") {
+		t.Errorf("repacked, unchanged:\n%s", out)
+	}
+	if out := mustGrid(t, "hub", "history", "--kind", "job", h); !strings.Contains(out, "submitted") || !strings.Contains(out, id) {
+		t.Errorf("hub history:\n%s", out)
 	}
 	if out := mustGrid(t, "hub", "job", id, h); !strings.Contains(out, "out/report.txt") || !strings.Contains(out, "write  done") {
 		t.Errorf("job:\n%s", out)
@@ -232,8 +271,14 @@ path = "result.json"
 	if out := mustGrid(t, "node", "status", n); !strings.Contains(out, "connected") || strings.Contains(out, "not connected") {
 		t.Errorf("node status:\n%s", out)
 	}
-	if out := mustGrid(t, "node", "jobs", "--history", n); !strings.Contains(out, "write") {
-		t.Errorf("node jobs --history:\n%s", out)
+	if out := mustGrid(t, "node", "history", "--kind", "job", n); !strings.Contains(out, "/write") {
+		t.Errorf("node history:\n%s", out)
+	}
+	if out := mustGrid(t, "node", "history", "--kind", "share", n); !strings.Contains(out, "install") {
+		t.Errorf("node history share:\n%s", out)
+	}
+	if out := mustGrid(t, "node", "status", n); !strings.Contains(out, "share  1, ") {
+		t.Errorf("node status share:\n%s", out)
 	}
 
 	// bad input
