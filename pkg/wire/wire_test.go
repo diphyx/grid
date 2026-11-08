@@ -265,3 +265,44 @@ func TestParseEventLine(t *testing.T) {
 		}
 	}
 }
+
+func TestSize(t *testing.T) {
+	good := map[string]int64{"0": 0, "512B": 512, "1KB": KB, "100MB": 100 * MB, "10GB": 10 * GB, "2TB": 2 * TB}
+	for text, want := range good {
+		got, err := ParseSize(text)
+		if err != nil || got != want {
+			t.Errorf("%s: got %d %v, want %d", text, got, err, want)
+		}
+		if text != "0" && (Size{Bytes: want}).String() != text {
+			t.Errorf("%s: string %s", text, Size{Bytes: want})
+		}
+	}
+	for _, text := range []string{"", "5", "-1GB", "1.5GB", "GB", "10gb", "10 GiB"} {
+		if _, err := ParseSize(text); err == nil {
+			t.Errorf("accepted %q", text)
+		}
+	}
+	var config struct {
+		Limit Size `toml:"limit"`
+	}
+	if err := DecodeTOML([]byte("limit = 10\n"), &config); err == nil {
+		t.Error("a bare number accepted as a size")
+	}
+	if err := DecodeTOML([]byte("limit = \"10GB\"\n"), &config); err != nil || config.Limit.Bytes != 10*GB {
+		t.Errorf("got %v %v", config.Limit, err)
+	}
+}
+
+func TestPushCheck(t *testing.T) {
+	job, id := strings.Repeat("a", 32), strings.Repeat("b", 32)
+	for _, push := range []Push{{Job: job}, {Job: job, Path: "x"}, {Job: job, Path: "a/b", ID: id}} {
+		if err := push.Check(); err != nil {
+			t.Errorf("%+v: %v", push, err)
+		}
+	}
+	for _, push := range []Push{{Job: job, ID: id}, {Job: job, Path: ".", ID: id}, {Job: job, Path: "x", ID: "B"}, {Job: job, Path: "../x"}} {
+		if !IsReject(push.Check(), INVALID) {
+			t.Errorf("%+v accepted", push)
+		}
+	}
+}

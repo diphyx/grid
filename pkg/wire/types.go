@@ -83,12 +83,15 @@ type OpenOK struct {
 type Push struct {
 	Job  string `cbor:"job"`
 	Path string `cbor:"path,omitempty"`
+	ID   string `cbor:"id,omitempty"` // a share push: the tar's id (§10)
 }
 type PushOffset struct {
 	Offset uint64 `cbor:"offset"`
+	Have   bool   `cbor:"have"` // a share hit: send no bytes, only end
 }
 type PushOK struct {
 	Sha256 []byte `cbor:"sha256"`
+	Share  bool   `cbor:"share"` // in the share, linked into the space; false = in the space itself
 }
 
 type Exec struct {
@@ -133,8 +136,9 @@ type PullEnd struct {
 }
 
 type Beat struct {
-	Tags []string `cbor:"tags"`
-	Free uint64   `cbor:"free"`
+	Tags  []string `cbor:"tags"`
+	Free  uint64   `cbor:"free"`
+	Share bool     `cbor:"share"` // the node's share is on
 }
 
 type Post struct {
@@ -170,14 +174,25 @@ type Log struct {
 // Checks (§5, §6). Each returns a reject invalid, or nil.
 
 var (
-	jobRe  = regexp.MustCompile(`^[0-9a-f]{32}$`)
+	idRe   = regexp.MustCompile(`^[0-9a-f]{32}$`)
 	nameRe = regexp.MustCompile(`^[a-z0-9._-]{1,64}$`)
 )
 
-// CheckJob enforces §5: 32 lowercase hex chars.
+// IsID reports whether text is an id (§5): 32 lowercase hex chars.
+func IsID(text string) bool { return idRe.MatchString(text) }
+
+// CheckJob enforces §5: a job is an id.
 func CheckJob(jobID string) error {
-	if !jobRe.MatchString(jobID) {
+	if !IsID(jobID) {
 		return NewReject(INVALID, "job %q: want 32 lowercase hex", jobID)
+	}
+	return nil
+}
+
+// CheckID enforces §5 on a push id.
+func CheckID(pushID string) error {
+	if !IsID(pushID) {
+		return NewReject(INVALID, "id %q: want 32 lowercase hex", pushID)
 	}
 	return nil
 }
@@ -236,6 +251,16 @@ func (push *Push) Check() error {
 	checkJobError := CheckJob(push.Job)
 	if checkJobError != nil {
 		return checkJobError
+	}
+	if push.ID != "" {
+		checkIDError := CheckID(push.ID)
+		if checkIDError != nil {
+			return checkIDError
+		}
+		// a share is linked in place of a path, never of the space itself
+		if push.Path == "" || push.Path == "." {
+			return NewReject(INVALID, "push: a share needs a path")
+		}
 	}
 	if push.Path != "" {
 		return CheckPath(push.Path)
