@@ -15,11 +15,11 @@ import (
 
 // The local view: HTTP over a Unix socket, JSON, read only. The CLI reads it.
 //
-//	GET /status             Status
-//	GET /jobs               []Meta
-//	GET /history?kind=K     []history.Entry, all kinds or one
-//	GET /job/{id}           JobView
-//	GET /tail/{id}?after=N  JSON lines: wire.JSONEvent, until drop
+//	GET /status                 Status
+//	GET /jobs                   []Meta
+//	GET /history?kind=K&hub=IP  []history.Entry; each filter left out = all
+//	GET /job/{id}               JobView
+//	GET /tail/{id}?after=N      JSON lines: wire.JSONEvent, until drop
 
 // Status is `grid node status`.
 type Status struct {
@@ -30,9 +30,15 @@ type Status struct {
 	Free   uint64    `json:"free"`
 	Since  time.Time `json:"since"`
 	Signal bool      `json:"signal"`
-	Hub    string    `json:"hub"`
-	Online bool      `json:"online"` // signal connection up
+	Hubs   []HubView `json:"hubs"`
 	Share  ShareView `json:"share"`
+}
+
+// HubView is a trusted hub in `grid node status`.
+type HubView struct {
+	IP     string `json:"ip"`
+	Addr   string `json:"addr"`   // where it listens, with signal
+	Online bool   `json:"online"` // signal connection up
 }
 
 // ShareView is the share space in `grid node status`.
@@ -52,10 +58,13 @@ type JobView struct {
 // Status is what `grid node status` shows.
 func (node *Node) Status() Status {
 	used, count := node.shares.usage()
+	hubs := make([]HubView, 0, len(node.hubs))
+	for _, link := range node.hubs {
+		hubs = append(hubs, HubView{IP: link.ip, Addr: link.addr, Online: link.online.Load()})
+	}
 
 	return Status{Addr: node.Addr(), Key: node.key.Public.String(), Tags: node.config.Tags, Limit: node.config.Jobs.Limit, Free: node.free(),
-		Since: node.started, Signal: node.config.Signal, Hub: wire.Addr(node.config.Hub.IP, node.config.Hub.Port), Online: node.hubOnline.Load(),
-		Share: ShareView{Limit: node.shares.limit, Used: used, Shares: count}}
+		Since: node.started, Signal: node.config.Signal, Hubs: hubs, Share: ShareView{Limit: node.shares.limit, Used: used, Shares: count}}
 }
 
 // ServeLocal serves the view on the config's socket until Close.
@@ -90,7 +99,7 @@ func (node *Node) localMux() *http.ServeMux {
 	mux.HandleFunc("GET /status", func(writer http.ResponseWriter, request *http.Request) { writeJSON(writer, node.Status()) })
 	mux.HandleFunc("GET /jobs", func(writer http.ResponseWriter, request *http.Request) { writeJSON(writer, node.Jobs()) })
 	mux.HandleFunc("GET /history", func(writer http.ResponseWriter, request *http.Request) {
-		writeJSON(writer, node.history.Read(request.URL.Query().Get("kind")))
+		writeJSON(writer, node.history.Read(request.URL.Query().Get("kind"), hubQuery(request)))
 	})
 	mux.HandleFunc("GET /job/{id}", func(writer http.ResponseWriter, request *http.Request) {
 		job := node.job(request.PathValue("id"))
@@ -160,6 +169,16 @@ func (node *Node) localMux() *http.ServeMux {
 	})
 
 	return mux
+}
+
+// hubQuery is the ?hub= filter, written the way Meta.Hub is; "" = all.
+func hubQuery(request *http.Request) string {
+	hub := request.URL.Query().Get("hub")
+	if hub == "" {
+		return ""
+	}
+
+	return wire.NormIP(hub)
 }
 
 func writeJSON(writer http.ResponseWriter, value any) {

@@ -16,7 +16,7 @@ func (fakeNode *FakeNode) push(request *wire.Request) error {
 	if decodeBodyError != nil {
 		return decodeBodyError
 	}
-	job, jobError := fakeNode.job(body.Job)
+	job, jobError := fakeNode.job(request, body.Job)
 	if jobError != nil {
 		return jobError
 	}
@@ -167,7 +167,7 @@ func (fakeNode *FakeNode) pull(request *wire.Request) error {
 	if decodeBodyError != nil {
 		return decodeBodyError
 	}
-	job, jobError := fakeNode.job(pullBody.Job)
+	job, jobError := fakeNode.job(request, pullBody.Job)
 	if jobError != nil {
 		return jobError
 	}

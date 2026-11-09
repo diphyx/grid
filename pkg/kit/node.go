@@ -11,15 +11,19 @@ import (
 
 // NodeTarget is a node under test. The node must trust Hub's public key
 // for the kit's IP, serve Tag, and define the cmds in pkg/kit/cmds/node.toml.
+// With Other, it must also trust Other's public key for the IP the kit has when it dials
+// OtherAddr: the node at another address, reached from another of the kit's IPs.
 type NodeTarget struct {
-	Addr    string       // ip:port of the node
-	NodeKey wire.Key     // the node's public key
-	Hub     wire.Keypair // the kit's key pair, as the hub
-	Tag     string       // default "kit"
-	Limit   int          // the node's [jobs] limit; 0 = skip the full check
-	Share   bool         // the node's share is on: run the share checks
-	Listen  string       // ip:port to accept beat and post on; "" = skip signal checks
-	Wait    time.Duration
+	Addr      string       // ip:port of the node
+	NodeKey   wire.Key     // the node's public key
+	Hub       wire.Keypair // the kit's key pair, as the hub
+	Tag       string       // default "kit"
+	Limit     int          // the node's [jobs] limit; 0 = skip the full check
+	Share     bool         // the node's share is on: run the share checks
+	Listen    string       // ip:port to accept beat and post on; "" = skip signal checks
+	Other     wire.Keypair // a second hub's key pair; zero = skip the second-hub checks
+	OtherAddr string       // ip:port of the node for the second hub, as in [::1]:9420
+	Wait      time.Duration
 }
 
 type nodeRun struct {
@@ -58,6 +62,7 @@ func TestNode(target NodeTarget, report *Report) {
 	run.files(session)
 	run.share(session)
 	run.drop(session)
+	run.hubs(session)
 	if collector != nil {
 		run.signal(session, collector)
 	} else {

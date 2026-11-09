@@ -7,17 +7,19 @@ import (
 	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
-// onState wakes the signal loop: there is a state event to post (§6).
+// onState wakes the signal loops: there is a state event to post (§6).
 func (node *Node) onState() {
 	if !node.config.Signal {
 		return
 	}
-	select {
-	case node.posts <- struct{}{}:
-		{
-		}
-	default:
-		{
+	for _, link := range node.hubs {
+		select {
+		case link.posts <- struct{}{}:
+			{
+			}
+		default:
+			{
+			}
 		}
 	}
 }
@@ -29,10 +31,10 @@ func (node *Node) free() uint64 {
 	return uint64(max(node.config.Jobs.Limit-len(node.jobs), 0))
 }
 
-// signal dials the hub, sends beat every 5 s, and posts every state event in order until it is
-// acked. What was acked is saved per job, so after a restart the rest is sent again.
-func (node *Node) signal() {
-	address := wire.Addr(node.config.Hub.IP, node.config.Hub.Port)
+// signal dials one hub, sends beat every 5 s, and posts its jobs' state events in order until
+// they are acked. What was acked is saved per job, so after a restart the rest is sent again.
+// Each hub has its own loop: one that is down does not hold up the others.
+func (node *Node) signal(link *hubLink) {
 	var session *wire.Session
 	ticker := time.NewTicker(wire.BEAT_EVERY)
 	defer ticker.Stop()
@@ -42,9 +44,9 @@ func (node *Node) signal() {
 		if session != nil {
 			_ = session.Close()
 			session = nil
-			node.history.Add(history.Entry{Kind: history.KIND_HUB, Event: "disconnected", Subject: address})
+			node.history.Add(history.Entry{Kind: history.KIND_HUB, Event: "disconnected", Subject: link.addr, Hub: link.ip})
 		}
-		node.hubOnline.Store(false)
+		link.online.Store(false)
 	}
 	for {
 		if session != nil {
@@ -59,16 +61,16 @@ func (node *Node) signal() {
 			}
 		}
 		if session == nil {
-			connection, connectError := wire.Connect(address, node.key, node.hubKey, nil)
+			connection, connectError := wire.Connect(link.addr, node.key, link.key, nil)
 			if connectError == nil {
 				opened := wire.NewSession(connection)
 				go func() {
 					_ = opened.Run(nil)
-					node.hubOnline.Store(false)
+					link.online.Store(false)
 				}()
 				session = opened
-				node.hubOnline.Store(true)
-				node.history.Add(history.Entry{Kind: history.KIND_HUB, Event: "connected", Subject: address})
+				link.online.Store(true)
+				node.history.Add(history.Entry{Kind: history.KIND_HUB, Event: "connected", Subject: link.addr, Hub: link.ip})
 			}
 		}
 		if session != nil && isBeatDue {
@@ -79,7 +81,7 @@ func (node *Node) signal() {
 			isBeatDue = false
 		}
 		if session != nil {
-			postError := node.postAll(session)
+			postError := node.postAll(session, link)
 			if postError != nil {
 				drop()
 			}
@@ -91,7 +93,7 @@ func (node *Node) signal() {
 
 				return
 			}
-		case <-node.posts:
+		case <-link.posts:
 			{
 			}
 		case <-ticker.C:
@@ -102,13 +104,16 @@ func (node *Node) signal() {
 	}
 }
 
-// postAll sends every job's unacked state events, in seq order per job. A reject skips the
-// event; a broken connection returns, and the next try starts from what was acked.
-func (node *Node) postAll(session *wire.Session) error {
+// postAll sends the unacked state events of link's jobs, in seq order per job; another hub's
+// jobs are not its business. A reject skips the event; a broken connection returns, and the
+// next try starts from what was acked.
+func (node *Node) postAll(session *wire.Session, link *hubLink) error {
 	node.mutex.Lock()
 	jobs := make([]*Job, 0, len(node.jobs))
 	for _, each := range node.jobs {
-		jobs = append(jobs, each)
+		if each.meta.Hub == link.ip {
+			jobs = append(jobs, each)
+		}
 	}
 	node.mutex.Unlock()
 	for _, job := range jobs {

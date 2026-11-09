@@ -1,4 +1,5 @@
-// Package node is the reference grid node: it runs the hub's jobs in spaces on disk.
+// Package node is the reference grid node: it runs its hubs' jobs in spaces on disk, each job
+// its opener's.
 // Embed it (New, Listen, Serve), or run it as a daemon with `grid node run`.
 //
 //	config.go   node.toml
@@ -9,6 +10,7 @@
 //	files.go    push and pull (§10)
 //	share.go    the share: share pushes kept for the jobs after, linked into their spaces
 //	link_*.go   the link into a space: a symlink, a junction on Windows
-//	signal.go   beat and post, with signal on
+//	hubs.go     the trusted hubs: handshake peers, each job's opener
+//	signal.go   beat and post, with signal on: one loop per hub
 //	local.go    the socket API
 package node

@@ -1,6 +1,7 @@
 package kit
 
 import (
+	"net"
 	"time"
 
 	"github.com/diphyx/grid/v2/pkg/wire"
@@ -55,4 +56,14 @@ func (fakeNode *FakeNode) signal() {
 			isBeatDue = true
 		}
 	}
+}
+
+// signalIP is the IP of the hub signal goes to: only its jobs are posted there.
+func (fakeNode *FakeNode) signalIP() string {
+	host, _, splitError := net.SplitHostPort(fakeNode.Hub)
+	if splitError != nil {
+		return wire.NormIP(fakeNode.Hub)
+	}
+
+	return wire.NormIP(host)
 }

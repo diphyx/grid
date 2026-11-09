@@ -13,11 +13,11 @@ const USAGE = `grid: the hub and node daemons, their CLI, keys, and the test kit
 
 Node:
   grid node run [--config /etc/grid/node.toml]   the node daemon
-  grid node status                               tags, jobs, share, uptime, hub connected
-  grid node jobs                                 open jobs
-  grid node job <id>                             one job: cmds, files, state, times
+  grid node status                               tags, jobs, share, uptime, each hub connected
+  grid node jobs                                 open jobs, with their hub
+  grid node job <id>                             one job: hub, cmds, files, state, times
   grid node tail <id> [--after N]                follow a job's events
-  grid node history [--kind K]                   the event log: job, share, node, hub
+  grid node history [--kind K] [--hub IP]        the event log: job, share, node, hub
 
 Hub:
   grid hub run [--config /etc/grid/hub.toml]     the hub daemon
@@ -97,6 +97,7 @@ type flags struct {
 	repack bool
 	after  string
 	kind   string
+	hub    string
 }
 
 // parse reads flags anywhere among the args.
@@ -145,6 +146,10 @@ func parse(args []string, config, socket string) flags {
 		case "kind":
 			{
 				options.kind = val()
+			}
+		case "hub":
+			{
+				options.hub = val()
 			}
 		case "repack":
 			{

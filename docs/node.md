@@ -2,20 +2,24 @@
 
 > The worker: it offers a fixed set of cmds and runs jobs with them
 
-A node works for one hub. It runs each job in its own space, using only the cmds its config defines, and reports everything as it happens. It does not decide anything: it runs, reports, and cleans up.
+A node works for the hubs it trusts, one or several. It runs each job in its own space, using only the cmds its config defines, and reports everything as it happens. It does not decide anything: it runs, reports, and cleans up.
 
 ## Config
 
-The node's config, `/etc/grid/node.toml`, names its hub and the cmds it offers:
+The node's config, `/etc/grid/node.toml`, names its hubs and the cmds it offers:
 
 ```toml
 grid = 2                            # the generation it is for: grid version's major
 identity = "/etc/grid/node.key"     # who it is: its private key
 tags = ["build"]                    # the kinds of work it does
 
-[hub]                               # the one hub allowed to send it jobs
+[[hubs]]                            # prod: a hub allowed to send it jobs
 ip = "10.0.0.1"
-trust = "/etc/grid/hub.pub"         # whom it accepts: the hub's public key
+trust = "/etc/grid/prod.pub"        # whom it accepts: the hub's public key
+
+[[hubs]]                            # staging: another, with its own jobs
+ip = "10.0.0.3"
+trust = "/etc/grid/staging.pub"
 
 [jobs]
 limit = 4                           # jobs at once
@@ -41,9 +45,9 @@ exec = ["/opt/cmds/test"]
 | `grid`          | required | The grid generation the config is for, `2`: another is refused ([Versions](versions.md)) |
 | `identity`      | required | Path to the node's private key                                                           |
 | `tags`          | required | The kinds of work it does                                                                |
-| `[hub]`         | required | The hub allowed to send it jobs: `ip`, `trust`, and `port`                               |
+| `[[hubs]]`      | required | A hub allowed to send it jobs: `ip`, `trust`, and `port`; one or more, each IP once      |
 | `[cmds.<name>]` |          | A cmd it offers: `exec` is the command line, `timeout` its limit                         |
-| `signal`        | `false`  | Connect back to the hub to send heartbeats and step updates                              |
+| `signal`        | `false`  | Connect back to every hub to send heartbeats, and to each job's hub its step updates     |
 | `port`          | `9420`   | The port it listens on                                                                   |
 
 Its state is in three scopes, each with the same keys:
@@ -57,13 +61,23 @@ Its state is in three scopes, each with the same keys:
 - `"0"` as `expires` is never. Durations are strings, like `"10m"`, `"720h"`, or `"30d"`.
 - Sizes are strings with a unit, `B`, `KB`, `MB`, `GB`, or `TB`, in binary: `1GB` is 2³⁰ bytes. A bare number is an error.
 
-Open TCP `9420` to the hub's IP, and start it:
+Open TCP `9420` to the hubs' IPs, and start it:
 
 ```bash
 grid node run
 ```
 
 The file follows the same [TOML rules](job.md#the-job-file) as job files. The config is read at start: after a change, restart the node. Its jobs are kept; a cmd that was running ends `failed` with "node restarted", which fails its job.
+
+## Hubs
+
+Each `[[hubs]]` entry is a hub the node accepts: that IP, with that key. Hubs share the node, not their jobs:
+
+- **A job is its opener's.** The hub that opened a job is the only one that can call on it. To any other hub it is `unknown`: it can neither see, run, tail, kill, pull, nor drop it.
+- **One pool.** `[jobs] limit` counts the jobs of every hub together; when it is reached, every hub's new jobs wait.
+- **One share.** The share is for every hub: a push one hub made is a hit for the others. A hub can learn from that hit that the content is already there, so trust only hubs that may know each other's inputs.
+- **Signal per hub.** With `signal`, the node beats to every hub on a connection of its own, and posts a job's updates only to its hub. A hub that is down holds up no other.
+- **Removing a hub.** At the next start, the jobs of a hub no longer in the config are dropped: no hub could reach them, and they would hold slots. The history shows each as `orphaned`.
 
 ## Share
 
@@ -78,18 +92,20 @@ A job can mark a push `share` ([Job](job.md#shared-input)): the node keeps it in
 
 The node keeps an event log, read with `grid node history`:
 
-| Kind    | Events                                                                |
-| ------- | --------------------------------------------------------------------- |
-| `job`   | a cmd finished, a job dropped or expired, with how long it took       |
-| `share` | a share installed or removed, and why                                 |
-| `node`  | the node started or stopped                                           |
-| `hub`   | the hub connected or disconnected, with `signal`; a refused handshake |
+| Kind    | Events                                                                     |
+| ------- | -------------------------------------------------------------------------- |
+| `job`   | a cmd finished, a job dropped, expired, or orphaned, with how long it took |
+| `share` | a share installed or removed, and why                                      |
+| `node`  | the node started or stopped                                                |
+| `hub`   | a hub connected or disconnected, with `signal`; a refused handshake        |
+
+Each `job` and `hub` entry names its hub; `--hub IP` shows one hub's.
 
 ```
-AT                   KIND   EVENT    SUBJECT                                 TOOK     MESSAGE
-2026-11-08 10:01:58  share  install  9f3ac01b7e4d2a6c8b5f0e1d3a7c21e4        -        2GB
-2026-11-08 10:02:53  job    done     a1b2c3d4e5f60718293a4b5c6d7e8f90/build  42.318s
-2026-11-08 10:16:20  job    drop     a1b2c3d4e5f60718293a4b5c6d7e8f90        1m5s
+AT                   KIND   EVENT    SUBJECT                                 HUB       TOOK     MESSAGE
+2026-11-08 10:01:58  share  install  9f3ac01b7e4d2a6c8b5f0e1d3a7c21e4        -         -        2GB
+2026-11-08 10:02:53  job    done     a1b2c3d4e5f60718293a4b5c6d7e8f90/build  10.0.0.1  42.318s
+2026-11-08 10:16:20  job    drop     a1b2c3d4e5f60718293a4b5c6d7e8f90        10.0.0.1  1m5s
 ```
 
 ## Cmds
@@ -178,14 +194,14 @@ Results do not go here: what a job produces goes in files, which you [pull](job.
 
 Every command but `run` talks to the node on the same machine, and uses the node's own job ids, which differ from the hub's.
 
-| Command               | Options           | Does                                         |
-| --------------------- | ----------------- | -------------------------------------------- |
-| `grid node run`       | `--config <file>` | Start the node                               |
-| `grid node status`    |                   | Its tags, jobs, share, uptime, hub connected |
-| `grid node jobs`      |                   | Its open jobs                                |
-| `grid node history`   | `--kind K`        | The event log: `job`, `share`, `node`, `hub` |
-| `grid node job <id>`  |                   | One job: its cmds, files, state              |
-| `grid node tail <id>` | `--after N`       | Follow a job's events                        |
+| Command               | Options                | Does                                                                |
+| --------------------- | ---------------------- | ------------------------------------------------------------------- |
+| `grid node run`       | `--config <file>`      | Start the node                                                      |
+| `grid node status`    |                        | Its tags, jobs, share, uptime, each hub and whether it is connected |
+| `grid node jobs`      |                        | Its open jobs, with their hub                                       |
+| `grid node history`   | `--kind K`, `--hub IP` | The event log: `job`, `share`, `node`, `hub`                        |
+| `grid node job <id>`  |                        | One job: its hub, cmds, files, state                                |
+| `grid node tail <id>` | `--after N`            | Follow a job's events                                               |
 
 ## Docker
 

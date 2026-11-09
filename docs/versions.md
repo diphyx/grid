@@ -24,10 +24,10 @@ Nothing of one generation is moved, converted, or read by the next. A `path` set
 
 ## Generations
 
-| Generation | First release | Protocol | What it brought   |
-| ---------- | ------------- | -------- | ----------------- |
-| grid 1     | `1.0.0`       | `grid/1` | the first release |
-| grid 2     | `2.0.0`       | `grid/2` | generations       |
+| Generation | First release | Protocol | What it brought                  |
+| ---------- | ------------- | -------- | -------------------------------- |
+| grid 1     | `1.0.0`       | `grid/1` | the first release                |
+| grid 2     | `2.0.0`       | `grid/2` | generations; several hubs a node |
 
 ## Moving to a New Generation
 

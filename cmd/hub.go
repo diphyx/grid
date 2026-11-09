@@ -290,6 +290,9 @@ func showHub(httpClient *http.Client, command string, options flags, out io.Writ
 		}
 	case "history":
 		{
+			if options.hub != "" {
+				return errors.New("--hub: grid node history only")
+			}
 			path, value = "/history?kind="+url.QueryEscape(options.kind), &[]history.Entry{}
 		}
 	}
@@ -349,7 +352,7 @@ func showHub(httpClient *http.Client, command string, options flags, out io.Writ
 		}
 	case *[]history.Entry:
 		{
-			writeHistory(writer, *typed)
+			writeHistory(writer, *typed, false)
 		}
 	case *hub.JobView:
 		{

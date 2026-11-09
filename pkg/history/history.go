@@ -26,6 +26,7 @@ type Entry struct {
 	Kind    string        `json:"kind"`
 	Event   string        `json:"event"`
 	Subject string        `json:"subject,omitempty"`
+	Hub     string        `json:"hub,omitempty"` // on a node: the hub it is about, or whose job
 	Message string        `json:"message,omitempty"`
 	Took    time.Duration `json:"took,omitempty"` // for what has a duration; it began at At − Took
 }
@@ -86,9 +87,9 @@ func (log *Log) Add(entry Entry) {
 	}
 }
 
-// Read returns the entries of a kind, "" = all, oldest first; on a read error, those read
-// until then.
-func (log *Log) Read(kind string) []Entry {
+// Read returns the entries of a kind and a hub, "" = all, oldest first; on a read error, those
+// read until then.
+func (log *Log) Read(kind, hub string) []Entry {
 	if log == nil {
 		return []Entry{}
 	}
@@ -98,7 +99,7 @@ func (log *Log) Read(kind string) []Entry {
 	entries, _ := log.readLocked()
 	out := []Entry{}
 	for _, entry := range entries {
-		if kind == "" || entry.Kind == kind {
+		if (kind == "" || entry.Kind == kind) && (hub == "" || entry.Hub == hub) {
 			out = append(out, entry)
 		}
 	}

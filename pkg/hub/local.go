@@ -190,7 +190,7 @@ func (hub *Hub) Mux() *http.ServeMux {
 		_ = write(writer)
 	})
 	mux.HandleFunc("GET /history", func(writer http.ResponseWriter, request *http.Request) {
-		writeJSON(writer, hub.history.Read(request.URL.Query().Get("kind")))
+		writeJSON(writer, hub.history.Read(request.URL.Query().Get("kind"), ""))
 	})
 	mux.HandleFunc("GET /stored/{manifest}", func(writer http.ResponseWriter, request *http.Request) {
 		writeJSON(writer, map[string]bool{"stored": hub.Stored(request.PathValue("manifest"))})

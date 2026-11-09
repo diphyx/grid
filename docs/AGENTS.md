@@ -46,7 +46,7 @@ grid key pub /etc/grid/hub.key
 ```
 
 - Raw X25519, 32 bytes, base64 (44 chars); not SSH keys. Make them with `grid key new`.
-- Each side holds the **other** side's public key, always, with or without `signal`: the hub needs it to dial the node; the node accepts only the hub's key. A `.key` never leaves its machine.
+- Each side holds the **other** side's public key, always, with or without `signal`: the hub needs it to dial the node; the node accepts only its hubs' keys. A `.key` never leaves its machine.
 - In configs, `identity` is your own private key, a path only; `trust` is the other side's public key, itself or a path to its file.
 - `grid key new` refuses to overwrite.
 
@@ -59,10 +59,14 @@ tags = ["build"]                 # required
 signal = true                    # send beat + state changes to the hub; default false
 port = 9420                      # default
 
-[hub]                            # required: who may call this node
+[[hubs]]                         # prod; at least one: who may call this node; each IP once
 ip = "10.0.0.1"
-trust = "/etc/grid/hub.pub"
+trust = "/etc/grid/prod.pub"
 port = 9420                      # where the hub listens, with signal
+
+[[hubs]]                         # staging: its own jobs, the same pool and share
+ip = "10.0.0.3"
+trust = "/etc/grid/staging.pub"
 
 [jobs]
 path = "/var/lib/grid/2/node/jobs" # default
@@ -83,6 +87,10 @@ expires = "7d"                   # a share no job used this long goes; "0" = nev
 exec = ["make", "-j8"]
 timeout = "1h"                   # "0" = never
 ```
+
+- A job is the hub's that opened it: `unknown` to every other hub.
+- `[jobs] limit` and the share are one for all hubs.
+- With `signal`: beat to every hub, a job's posts only to its own.
 
 ## 4. Hub Config — `/etc/grid/hub.toml`
 
@@ -110,7 +118,7 @@ share = true                     # a hint: its share is on; default false
 
 **TOML rules that bite:**
 
-- Top-level keys must come **before** the first `[table]`; a key after `[hub]` belongs to `[hub]`.
+- Top-level keys must come **before** the first `[table]`; a key after `[[hubs]]` belongs to that hub.
 - Durations are **strings**: `"10m"`, `"30d"`, `"0"`. A bare number (`expires = 600`) is rejected.
 - Sizes are **strings** with a unit, binary: `"512MB"`, `"10GB"` (2³⁰), `"0"`. A bare number is rejected.
 - Unknown keys are errors, named with their line: `unknown keys: retry (line 2)`.
@@ -162,7 +170,7 @@ Event lines: `[name]` required (`[a-z0-9._-]{1,64}`), then optional `key=value` 
 ```bash
 # node
 grid node run [--config /etc/grid/node.toml]
-grid node status | jobs | job <id> | tail <id> [--after N] | history [--kind K]
+grid node status | jobs | job <id> | tail <id> [--after N] | history [--kind K] [--hub IP]
 
 # hub; submit prints the id, and --wait exits 0 only if the job is done
 grid hub run [--config /etc/grid/hub.toml]
@@ -223,11 +231,11 @@ COPY cmds/ /opt/cmds/
 
 ## 12. Test Kit
 
-| Command             | Checks                                                                                                                                   |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `grid test node`    | a node: 87 checks; needs the kit cmds (`pkg/kit/cmds/node.toml`), `tags = ["kit"]`, `[jobs] limit = 2`; `--share` with a `[share] limit` |
-| `grid test hub`     | a hub: every frame it sends; that it drops its jobs                                                                                      |
-| `grid test vectors` | the golden bytes in `spec/vectors.json`                                                                                                  |
+| Command             | Checks                                                                                                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `grid test node`    | a node: 106 checks; needs the kit cmds (`pkg/kit/cmds/node.toml`), `tags = ["kit"]`, `[jobs] limit = 2`; `--share` with a `[share] limit`; `--other-*` with a second `[[hubs]]` entry |
+| `grid test hub`     | a hub: every frame it sends; that it drops its jobs                                                                                                                                   |
+| `grid test vectors` | the golden bytes in `spec/vectors.json`                                                                                                                                               |
 
 Exit code = failed checks, up to 125. The kit talks to your running program over TCP, so the language does not matter: check your encoder against `spec/vectors.json` first, then point the kit at it. Passing the kit makes any implementation a grid hub or node.
 

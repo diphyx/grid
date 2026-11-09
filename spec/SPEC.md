@@ -10,14 +10,14 @@ TCP → IP check → Noise handshake → frames → envelopes
 ```
 
 1. The dialer opens TCP to `ip:port`; the default port is `9420`.
-2. The listener closes the connection at once if the IP is not in its config.
+2. The listener closes the connection at once if the IP is not in its config. A node trusts one or more hubs: `hubs: [{ip: str, trust: key, port?: uint}]`, one entry per IP; `port` is where that hub listens, for `signal`.
 3. Noise handshake, the dialer is the initiator:
    - pattern `Noise_IK_25519_ChaChaPoly_SHA256`
    - prologue: the ASCII bytes `grid/2`, the generation; a mismatch fails the handshake
    - the listener checks the dialer's static key against the key for that IP; no match → close
    - timeout 10 s → close
 4. After the handshake, every frame is encrypted.
-5. **Only the dialer calls.** The hub dials for job calls; the node dials its own connection for `beat` and `post`.
+5. **Only the dialer calls.** The hub dials for job calls; the node dials its own connection for `beat` and `post`, one per hub.
 
 ## 2. Keys
 
@@ -111,9 +111,9 @@ Rules per call:
 | `kill` | no `exec` on → `ok`, nothing done                                                                                                                                                                                                                                                                                                                                             |
 | `pull` | `offset` = bytes the hub already has; no files → `files: []`, no `data`, `end {}`                                                                                                                                                                                                                                                                                             |
 | `drop` | kills a running `exec` first                                                                                                                                                                                                                                                                                                                                                  |
-| all    | no such job → `unknown`; every job call resets `expires`                                                                                                                                                                                                                                                                                                                      |
-| `beat` | every 5 s; the hub decides when a node is lost; `free` = jobs it can still open; `share` = its share is on                                                                                                                                                                                                                                                                    |
-| `post` | resent in `seq` order until `ok`                                                                                                                                                                                                                                                                                                                                              |
+| all    | no such job → `unknown`; a job is the hub's that opened it: to any other hub it is `unknown`, for every call; every job call resets `expires`                                                                                                                                                                                                                                 |
+| `beat` | every 5 s, to every hub; the hub decides when a node is lost; `free` = jobs it can still open, one pool for all hubs; `share` = its share is on                                                                                                                                                                                                                               |
+| `post` | only to the job's own hub; resent in `seq` order until `ok`                                                                                                                                                                                                                                                                                                                   |
 
 ## 7. States
 

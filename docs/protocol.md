@@ -106,11 +106,11 @@ The hub always dials the node for job calls; the node dials the hub only for `be
 
 The test kit checks that a hub or a node follows the protocol. It never looks at your code: it is the `grid` binary, talking to your running program over TCP, the way the other side would. So an implementation in any language, Node.js, Python, Rust, is tested the same way, and once it passes, it works with grid's own hub and node.
 
-| Run                 | The kit acts as | Checks                                                                       |
-| ------------------- | --------------- | ---------------------------------------------------------------------------- |
-| `grid test vectors` | —               | prints the golden bytes, to check an encoder                                 |
-| `grid test node`    | the hub         | a node: 87 checks, every call, state, event, file rule, share, beat and post |
-| `grid test hub`     | a node          | a hub: every frame and body it sends; that it drops its jobs                 |
+| Run                 | The kit acts as | Checks                                                                                      |
+| ------------------- | --------------- | ------------------------------------------------------------------------------------------- |
+| `grid test vectors` | —               | prints the golden bytes, to check an encoder                                                |
+| `grid test node`    | the hub         | a node: 106 checks, every call, state, event, file rule, share, beat and post, a second hub |
+| `grid test hub`     | a node          | a hub: every frame and body it sends; that it drops its jobs                                |
 
 The exit code is the number of failed checks, up to 125; `--json` for CI.
 
@@ -133,14 +133,16 @@ grid test node --addr 127.0.0.1 --key my-node.pub --private kit.key --limit 2 --
 ### A Node
 
 1. Give the node the kit cmds: copy [`pkg/kit/cmds/`](https://github.com/diphyx/grid/tree/HEAD/pkg/kit/cmds) onto it and append `node.toml` from there to its config, with `KIT` replaced by that folder. Set `tags = ["kit"]`, `[jobs] limit = 2`, and a `[share] limit` for the share checks. These small scripts give known results: `fail` must end `failed`, `nap` must hit its `timeout`, `emit` must send events, `copy` must read a share.
-2. Let it trust the kit: `grid key new kit`, then set the node's `[hub]` to `ip` = the kit's machine and `trust` = `kit.pub`.
+2. Let it trust the kit: `grid key new kit`, then give the node a `[[hubs]]` entry with `ip` = the kit's machine and `trust` = `kit.pub`.
 3. Run:
 
 ```sh
 grid test node --addr 10.0.0.2 --key node.pub --private kit.key --limit 2 --share --listen 10.0.0.1:9430
 ```
 
-The kit opens jobs, pushes, shares, runs the kit cmds, tails, kills, pulls, and drops, and checks every answer; `--share` runs the share checks, for a node with its share on. `--listen` also checks `beat` and `post`: the node needs `signal = true`, and its `[hub]` `ip` and `port` set to that address (here `port = 9430`).
+The kit opens jobs, pushes, shares, runs the kit cmds, tails, kills, pulls, and drops, and checks every answer; `--share` runs the share checks, for a node with its share on. `--listen` also checks `beat` and `post`: the node needs `signal = true`, and that `[[hubs]]` entry's `ip` and `port` set to that address (here `port = 9430`).
+
+To check that a job is its opener's, act as a second hub too: `grid key new kit2`, give the node a second `[[hubs]]` entry with `trust` = `kit2.pub` and `ip` = the kit's address toward another of the node's addresses, and add `--other-private kit2.key --other-addr <that address>`. On one machine, IPv4 and IPv6 loopback are two hubs: entries `127.0.0.1` and `::1`, and `--addr 127.0.0.1 --other-addr ::1`. The second hub must run its own job and get `unknown` for every call on the first's, and the first on its.
 
 ### A Hub
 

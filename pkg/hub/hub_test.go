@@ -57,7 +57,7 @@ tags = ["kit"]
 signal = %s
 socket = %q
 
-[hub]
+[[hubs]]
 ip = "127.0.0.1"
 port = %d
 trust = %q

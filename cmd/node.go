@@ -97,7 +97,7 @@ func show(httpClient *http.Client, command string, options flags, out io.Writer)
 		}
 	case "history":
 		{
-			path, value = "/history?kind="+url.QueryEscape(options.kind), &[]history.Entry{}
+			path, value = "/history?kind="+url.QueryEscape(options.kind)+"&hub="+url.QueryEscape(options.hub), &[]history.Entry{}
 		}
 	case "job":
 		{
@@ -120,32 +120,35 @@ func show(httpClient *http.Client, command string, options flags, out io.Writer)
 	switch typed := value.(type) {
 	case *node.Status:
 		{
-			hub := "signal off"
-			if typed.Signal {
-				hub = typed.Hub + "  " + map[bool]string{true: "connected", false: "not connected"}[typed.Online]
-			}
 			share := "off"
 			if typed.Share.Limit > 0 {
 				share = fmt.Sprintf("%d, %s of %s", typed.Share.Shares, wire.Size{Bytes: typed.Share.Used}, wire.Size{Bytes: typed.Share.Limit})
 			}
-			fmt.Fprintf(writer, "addr\t%s\nkey\t%s\ntags\t%s\njobs\t%d free of %d\nshare\t%s\nup\t%s\nhub\t%s\n",
-				typed.Addr, typed.Key, strings.Join(typed.Tags, " "), typed.Free, typed.Limit, share, strings.TrimSuffix(ago(typed.Since), " ago"), hub)
+			fmt.Fprintf(writer, "addr\t%s\nkey\t%s\ntags\t%s\njobs\t%d free of %d\nshare\t%s\nup\t%s\n",
+				typed.Addr, typed.Key, strings.Join(typed.Tags, " "), typed.Free, typed.Limit, share, strings.TrimSuffix(ago(typed.Since), " ago"))
+			for _, peer := range typed.Hubs {
+				link := peer.IP + "  signal off"
+				if typed.Signal {
+					link = peer.Addr + "  " + map[bool]string{true: "connected", false: "not connected"}[peer.Online]
+				}
+				fmt.Fprintf(writer, "hub\t%s\n", link)
+			}
 		}
 	case *[]node.Meta:
 		{
-			fmt.Fprintln(writer, "JOB\tTAG\tCMD\tSTATE\tOPENED\tUSED")
+			fmt.Fprintln(writer, "JOB\tHUB\tTAG\tCMD\tSTATE\tOPENED\tUSED")
 			for _, meta := range *typed {
-				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n", meta.ID, meta.Tag, dash(meta.State.Cmd), meta.State.State, ago(meta.Opened), ago(meta.Used))
+				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", meta.ID, meta.Hub, meta.Tag, dash(meta.State.Cmd), meta.State.State, ago(meta.Opened), ago(meta.Used))
 			}
 		}
 	case *[]history.Entry:
 		{
-			writeHistory(writer, *typed)
+			writeHistory(writer, *typed, true)
 		}
 	case *node.JobView:
 		{
-			fmt.Fprintf(writer, "job\t%s\ntag\t%s\nstate\t%s\nmessage\t%s\nopened\t%s\nused\t%s\n\n",
-				typed.ID, typed.Tag, typed.State.State, dash(typed.State.Message), ago(typed.Opened), ago(typed.Used))
+			fmt.Fprintf(writer, "job\t%s\nhub\t%s\ntag\t%s\nstate\t%s\nmessage\t%s\nopened\t%s\nused\t%s\n\n",
+				typed.ID, typed.Hub, typed.Tag, typed.State.State, dash(typed.State.Message), ago(typed.Opened), ago(typed.Used))
 			fmt.Fprintln(writer, "CMD\tSTATE\tSTART\tTOOK\tMESSAGE")
 			for _, run := range typed.Runs {
 				took := "…"

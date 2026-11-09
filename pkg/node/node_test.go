@@ -39,7 +39,16 @@ var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func testNodeWith(t *testing.T, data, expires string) (*Node, wire.Keypair, string) {
 	t.Helper()
+	n, hub, _, sig := testNodeHubs(t, data, expires)
+	return n, hub, sig
+}
+
+// testNodeHubs is testNodeWith that also returns the second hub's key: the node trusts it
+// for ::1.
+func testNodeHubs(t *testing.T, data, expires string) (*Node, wire.Keypair, wire.Keypair, string) {
+	t.Helper()
 	hub, _ := wire.GenerateKeypair(nil)
+	other, _ := wire.GenerateKeypair(nil)
 	nodeKey, _ := wire.GenerateKeypair(nil)
 	dir := t.TempDir()
 	priv := filepath.Join(dir, "node.key")
@@ -53,8 +62,13 @@ port = %d
 tags = ["kit"]
 signal = true
 
-[hub]
+[[hubs]]
 ip = "127.0.0.1"
+port = %d
+trust = %q
+
+[[hubs]]
+ip = "::1"
 port = %d
 trust = %q
 
@@ -70,7 +84,7 @@ expires = "30d"
 [share]
 path = %q
 limit = "64MB"
-`, wire.MAJOR, priv, freePort(t), sigPort, hub.Public.String(), filepath.Join(data, "jobs"), expires, filepath.Join(data, "history"), filepath.Join(data, "share")) + strings.ReplaceAll(string(kitCmds), "KIT", cmds)
+`, wire.MAJOR, priv, freePort(t), sigPort, hub.Public.String(), freePort(t), other.Public.String(), filepath.Join(data, "jobs"), expires, filepath.Join(data, "history"), filepath.Join(data, "share")) + strings.ReplaceAll(string(kitCmds), "KIT", cmds)
 	path := filepath.Join(dir, "node.toml")
 	os.WriteFile(path, []byte(cfg), 0o644)
 	c, err := LoadConfig(path)
@@ -86,7 +100,7 @@ limit = "64MB"
 	}
 	go n.Serve()
 	t.Cleanup(func() { writable(data) })
-	return n, hub, fmt.Sprintf("127.0.0.1:%d", sigPort)
+	return n, hub, other, fmt.Sprintf("127.0.0.1:%d", sigPort)
 }
 
 // writable lets the test's temp dir go: the share is read only.
@@ -212,7 +226,7 @@ func TestShare(t *testing.T) {
 	if _, err := os.Stat(shared); !os.IsNotExist(err) {
 		t.Fatalf("an expired share stays: %v", err)
 	}
-	if got := n2.history.Read(history.KIND_SHARE); len(got) != 2 || got[0].Event != "install" || got[1].Message != "expired" {
+	if got := n2.history.Read(history.KIND_SHARE, ""); len(got) != 2 || got[0].Event != "install" || got[1].Message != "expired" {
 		t.Fatalf("history %+v", got)
 	}
 }
@@ -258,14 +272,15 @@ func TestShareLimit(t *testing.T) {
 
 // TestKit runs the whole test kit against the real node.
 func TestKit(t *testing.T) {
-	n, hub, sig := testNode(t, t.TempDir())
+	n, hub, other, sig := testNodeHubs(t, t.TempDir(), "0")
 	defer n.Close()
 	out := io.Discard
 	if testing.Verbose() {
 		out = os.Stdout
 	}
 	r := kit.NewReport(out, false)
-	kit.TestNode(kit.NodeTarget{Addr: fmt.Sprintf("127.0.0.1:%d", n.config.Port), NodeKey: n.key.Public, Hub: hub, Limit: 2, Share: true, Listen: sig, Wait: 15 * time.Second}, r)
+	kit.TestNode(kit.NodeTarget{Addr: fmt.Sprintf("127.0.0.1:%d", n.config.Port), NodeKey: n.key.Public, Hub: hub,
+		Other: other, OtherAddr: fmt.Sprintf("[::1]:%d", n.config.Port), Limit: 2, Share: true, Listen: sig, Wait: 15 * time.Second}, r)
 	for _, x := range r.All {
 		if !x.Pass {
 			t.Errorf("%s %s: %s", x.Spec, x.Name, x.Note)
@@ -352,7 +367,7 @@ func TestExpires(t *testing.T) {
 	if err := s.Do(wire.CALL_STAT, wire.JobRef{Job: b.Job}, nil); err != nil {
 		t.Fatalf("running job expired: %v", err)
 	}
-	hs := n.history.Read(history.KIND_JOB)
+	hs := n.history.Read(history.KIND_JOB, "")
 	if len(hs) == 0 || hs[len(hs)-1].Event != "expired" {
 		t.Fatalf("history %+v", hs)
 	}
@@ -379,7 +394,7 @@ func listenHub(t *testing.T, addr string, hub wire.Keypair, nodeKey wire.Key) *f
 			if err != nil {
 				return
 			}
-			c, err := wire.NewServer(nc, hub, wire.Peers{"127.0.0.1": nodeKey}, nil)
+			c, err := wire.NewServer(nc, hub, wire.Peers{"127.0.0.1": nodeKey, "::1": nodeKey}, nil)
 			if err != nil {
 				nc.Close()
 				continue
@@ -454,17 +469,121 @@ func TestPostsSurviveRestart(t *testing.T) {
 	if got != "[1 3]" { // running, done; seq 2 is the log line
 		t.Fatalf("posts %s, want [1 3]", got)
 	}
-	if !n2.Status().Online {
+	if !n2.Status().Hubs[0].Online {
 		t.Fatal("hub up but status says not connected")
 	}
 	h.close()
 	time.Sleep(500 * time.Millisecond)
-	if n2.Status().Online {
+	if n2.Status().Hubs[0].Online {
 		t.Fatal("hub gone but status still says connected")
 	}
 	time.Sleep(200 * time.Millisecond)
 	if got := fmt.Sprint(h.seqs(ok.Job)); got != "[1 3]" {
 		t.Fatalf("posts sent again: %s", got)
+	}
+}
+
+// TestTwoHubs: each hub runs its own jobs, has its own signal connection, and gets posts only
+// for its jobs; the history names the hub.
+func TestTwoHubs(t *testing.T) {
+	n, hub, other, sig := testNodeHubs(t, t.TempDir(), "0")
+	defer n.Close()
+	h1 := listenHub(t, sig, hub, n.key.Public)
+	defer h1.close()
+	h2 := listenHub(t, fmt.Sprintf("[::1]:%d", n.config.Hubs[1].Port), other, n.key.Public)
+	defer h2.close()
+
+	s1 := dialNode(t, n, hub)
+	defer s1.Close()
+	c, err := wire.Connect(fmt.Sprintf("[::1]:%d", n.config.Port), other, n.key.Public, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2 := wire.NewSession(c)
+	go s2.Run(nil)
+	defer s2.Close()
+
+	var a, b wire.OpenOK
+	if err := s1.Do(wire.CALL_OPEN, wire.Open{Tag: "kit"}, &a); err != nil {
+		t.Fatal(err)
+	}
+	if err := s2.Do(wire.CALL_OPEN, wire.Open{Tag: "kit"}, &b); err != nil {
+		t.Fatal(err)
+	}
+	if err := s2.Do(wire.CALL_STAT, wire.JobRef{Job: a.Job}, nil); !wire.IsReject(err, wire.UNKNOWN) {
+		t.Fatalf("stat on the other hub's job: %v, want unknown", err)
+	}
+	s1.Do(wire.CALL_EXEC, wire.Exec{Job: a.Job, Cmd: "echo", Args: []string{"a"}}, nil)
+	s2.Do(wire.CALL_EXEC, wire.Exec{Job: b.Job, Cmd: "echo", Args: []string{"b"}}, nil)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && (len(h1.seqs(a.Job)) < 2 || len(h2.seqs(b.Job)) < 2) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if got := fmt.Sprint(h1.seqs(a.Job), h2.seqs(b.Job)); got != "[1 3] [1 3]" {
+		t.Fatalf("posts %s, want [1 3] [1 3]", got)
+	}
+	if len(h1.seqs(b.Job)) != 0 || len(h2.seqs(a.Job)) != 0 {
+		t.Fatal("a job's events posted to the other hub")
+	}
+	status := n.Status()
+	if len(status.Hubs) != 2 || !status.Hubs[0].Online || !status.Hubs[1].Online {
+		t.Fatalf("status hubs %+v, want both connected", status.Hubs)
+	}
+	if got := n.history.Read(history.KIND_JOB, "::1"); len(got) != 1 || !strings.HasPrefix(got[0].Subject, b.Job) {
+		t.Fatalf("history for ::1: %+v, want its one cmd", got)
+	}
+}
+
+// TestHubRemoved: after a restart without a hub in the config, its jobs are dropped; the
+// other hub's stay.
+func TestHubRemoved(t *testing.T) {
+	data := t.TempDir()
+	n, hub, other, _ := testNodeHubs(t, data, "0")
+	s1 := dialNode(t, n, hub)
+	c, err := wire.Connect(fmt.Sprintf("[::1]:%d", n.config.Port), other, n.key.Public, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2 := wire.NewSession(c)
+	go s2.Run(nil)
+	var kept, gone wire.OpenOK
+	s1.Do(wire.CALL_OPEN, wire.Open{Tag: "kit"}, &kept)
+	s2.Do(wire.CALL_OPEN, wire.Open{Tag: "kit"}, &gone)
+	s1.Close()
+	s2.Close()
+	n.Close()
+
+	n.config.Hubs = n.config.Hubs[:1]
+	n2, err := New(n.config, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer n2.history.Close()
+	if n2.job(kept.Job) == nil || n2.job(gone.Job) != nil {
+		t.Fatalf("jobs %v, want only %s", n2.Jobs(), kept.Job)
+	}
+	if _, err := os.Stat(filepath.Join(data, "jobs", gone.Job)); !os.IsNotExist(err) {
+		t.Fatalf("the dropped job is still on disk: %v", err)
+	}
+	if got := n2.history.Read(history.KIND_JOB, "::1"); len(got) != 1 || got[0].Event != "orphaned" || got[0].Subject != gone.Job {
+		t.Fatalf("history %+v, want the orphaned job", got)
+	}
+}
+
+// TestConfigHubs: [[hubs]] needs at least one entry, each with ip and trust, and no IP twice.
+func TestConfigHubs(t *testing.T) {
+	dir := t.TempDir()
+	for _, each := range []struct{ hubs, want string }{
+		{"", "hubs: at least one"},
+		{"[[hubs]]\nip = \"10.0.0.1\"\n", "hubs[0]: ip and trust required"},
+		{"[[hubs]]\nip = \"127.0.0.1\"\ntrust = \"k\"\n[[hubs]]\nip = \"::ffff:127.0.0.1\"\ntrust = \"k\"\n", "hubs[1]: ip ::ffff:127.0.0.1 twice"},
+	} {
+		path := filepath.Join(dir, "node.toml")
+		os.WriteFile(path, []byte("grid = "+wire.MAJOR+"\nidentity = \"k\"\ntags = [\"kit\"]\n"+each.hubs), 0o644)
+		_, err := LoadConfig(path)
+		if err == nil || !strings.Contains(err.Error(), each.want) {
+			t.Errorf("%q: %v, want %q", each.hubs, err, each.want)
+		}
 	}
 }
 

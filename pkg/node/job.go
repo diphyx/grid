@@ -25,6 +25,7 @@ import (
 type Meta struct {
 	ID     string     `json:"id"`
 	Tag    string     `json:"tag"`
+	Hub    string     `json:"hub"` // the IP of the hub that opened it: the only one that may call on it
 	Opened time.Time  `json:"opened"`
 	Used   time.Time  `json:"used"`
 	State  wire.State `json:"state"`

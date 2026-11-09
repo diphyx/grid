@@ -31,15 +31,22 @@ func ago(at time.Time) string {
 	return at.Local().Format("2006-01-02 15:04")
 }
 
-// writeHistory prints history entries, one a line.
-func writeHistory(writer io.Writer, entries []history.Entry) {
-	fmt.Fprintln(writer, "AT\tKIND\tEVENT\tSUBJECT\tTOOK\tMESSAGE")
+// writeHistory prints history entries, one a line; withHub adds the HUB column, on a node.
+func writeHistory(writer io.Writer, entries []history.Entry, withHub bool) {
+	hub := func(text string) string {
+		if withHub {
+			return text + "\t"
+		}
+		return ""
+	}
+	fmt.Fprintln(writer, "AT\tKIND\tEVENT\tSUBJECT\t"+hub("HUB")+"TOOK\tMESSAGE")
 	for _, entry := range entries {
 		took := "-"
 		if entry.Took > 0 {
 			took = entry.Took.Round(time.Millisecond).String()
 		}
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n", entry.At.Local().Format("2006-01-02 15:04:05"), entry.Kind, entry.Event, dash(entry.Subject), took, entry.Message)
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s%s\t%s\n", entry.At.Local().Format("2006-01-02 15:04:05"), entry.Kind, entry.Event, dash(entry.Subject),
+			hub(dash(entry.Hub)), took, entry.Message)
 	}
 }
 

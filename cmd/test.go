@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/diphyx/grid/v2/pkg/kit"
@@ -53,11 +54,16 @@ func test(args []string) int {
 const TEST_USAGE = `grid test: the grid test kit
 
   grid test node    --addr IP[:PORT] --key NODE_PUBLIC --private HUB_PRIVATE_FILE
-                    [--tag kit] [--limit N] [--share] [--listen IP:PORT] [--json]
+                    [--tag kit] [--limit N] [--share] [--listen IP:PORT]
+                    [--other-private HUB2_PRIVATE_FILE --other-addr IP[:PORT]] [--json]
       Acts as the hub and runs every check against a node.
       The node must trust the kit's key, serve --tag, and have the cmds in pkg/kit/cmds/node.toml.
       --limit is its [jobs] limit; --share checks share pushes, for a node with [share] on.
-      --listen also checks beat and post: the node needs signal = true and [hub] at that address.
+      --listen also checks beat and post: the node needs signal = true and a [[hubs]] entry
+      at that address.
+      --other-private and --other-addr act as a second hub, reaching the node at another of
+      its addresses (e.g. [::1]): it must run its own jobs and get unknown on the first's.
+      The node needs a second [[hubs]] entry with that key, for the kit's IP there.
 
   grid test hub     --listen IP[:PORT] --private NODE_PRIVATE_FILE --hub-ip IP --hub-key HUB_PUBLIC
                     [--tag kit] [--limit 2] [--share] [--signal IP:PORT] [--for 60s] [--json]
@@ -77,7 +83,7 @@ func testAddr(text string) string {
 	if splitHostPortError == nil {
 		return text
 	}
-	return wire.Addr(text, 0)
+	return wire.Addr(strings.Trim(text, "[]"), 0)
 }
 
 func testExit(count int) int { return min(count, 125) }
@@ -91,6 +97,8 @@ func testNode(args []string) int {
 	limit := flagSet.Int("limit", 0, "the node's [jobs] limit; 0 = skip the full check")
 	share := flagSet.Bool("share", false, "the node's share is on: check share pushes")
 	listen := flagSet.String("listen", "", "IP:PORT to accept beat and post")
+	otherPrivate := flagSet.String("other-private", "", "a second hub's private key file; the node trusts its public key too")
+	otherAddr := flagSet.String("other-addr", "", "node IP[:PORT] for the second hub, from another of the kit's IPs")
 	asJSON := flagSet.Bool("json", false, "JSON output")
 	_ = flagSet.Parse(args)
 	if *target == "" || *key == "" || *private == "" {
@@ -104,8 +112,19 @@ func testNode(args []string) int {
 	if loadKeyError != nil {
 		fail(loadKeyError)
 	}
+	nodeTarget := kit.NodeTarget{Addr: testAddr(*target), NodeKey: nodeKey, Hub: hubKey, Tag: *tag, Limit: *limit, Share: *share, Listen: *listen}
+	if (*otherPrivate == "") != (*otherAddr == "") {
+		fail(errors.New("node: --other-private and --other-addr go together"))
+	}
+	if *otherPrivate != "" {
+		other, loadOtherError := wire.LoadPrivate(*otherPrivate)
+		if loadOtherError != nil {
+			fail(loadOtherError)
+		}
+		nodeTarget.Other, nodeTarget.OtherAddr = other, testAddr(*otherAddr)
+	}
 	report := kit.NewReport(os.Stdout, *asJSON)
-	kit.TestNode(kit.NodeTarget{Addr: testAddr(*target), NodeKey: nodeKey, Hub: hubKey, Tag: *tag, Limit: *limit, Share: *share, Listen: *listen}, report)
+	kit.TestNode(nodeTarget, report)
 
 	return testExit(report.Finish())
 }

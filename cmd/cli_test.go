@@ -124,7 +124,7 @@ tags = ["kit"]
 signal = true
 socket = %[3]q
 
-[hub]
+[[hubs]]
 ip = "127.0.0.1"
 port = %[4]d
 trust = "%[1]s/hub.pub"

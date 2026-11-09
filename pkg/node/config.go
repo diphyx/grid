@@ -16,14 +16,14 @@ type Config struct {
 	Tags     []string       `toml:"tags"`
 	Signal   bool           `toml:"signal"`
 	Socket   string         `toml:"socket"` // default /run/grid/node.sock
-	Hub      Peer           `toml:"hub"`
+	Hubs     []Peer         `toml:"hubs"`
 	Jobs     Jobs           `toml:"jobs"`
 	History  History        `toml:"history"`
 	Share    Share          `toml:"share"`
 	Cmds     map[string]Cmd `toml:"cmds"`
 }
 
-// Peer is the hub the node trusts.
+// Peer is a hub the node trusts; its jobs are its own.
 type Peer struct {
 	IP    string `toml:"ip"`
 	Port  int    `toml:"port"`
@@ -116,8 +116,21 @@ func (config *Config) check() error {
 	if len(config.Tags) == 0 {
 		errs = append(errs, errors.New("tags: at least one"))
 	}
-	if config.Hub.IP == "" || config.Hub.Trust == "" {
-		errs = append(errs, errors.New("hub: ip and trust required"))
+	if len(config.Hubs) == 0 {
+		errs = append(errs, errors.New("hubs: at least one"))
+	}
+	seen := map[string]bool{}
+	for index, peer := range config.Hubs {
+		if peer.IP == "" || peer.Trust == "" {
+			errs = append(errs, fmt.Errorf("hubs[%d]: ip and trust required", index))
+
+			continue
+		}
+		ip := wire.NormIP(peer.IP)
+		if seen[ip] {
+			errs = append(errs, fmt.Errorf("hubs[%d]: ip %s twice", index, peer.IP))
+		}
+		seen[ip] = true
 	}
 	if config.Jobs.Limit < 1 {
 		errs = append(errs, errors.New("jobs.limit: at least 1"))
@@ -136,15 +149,20 @@ func (config *Config) check() error {
 	return errors.Join(errs...)
 }
 
-// Keys loads the node's key pair and the hub's key.
-func (config *Config) Keys() (wire.Keypair, wire.Key, error) {
+// Keys loads the node's key pair and each hub's key, in the order of Hubs.
+func (config *Config) Keys() (wire.Keypair, []wire.Key, error) {
 	keypair, loadPrivateError := wire.LoadPrivate(config.Identity)
 	if loadPrivateError != nil {
-		return keypair, wire.Key{}, fmt.Errorf("identity: %w", loadPrivateError)
+		return keypair, nil, fmt.Errorf("identity: %w", loadPrivateError)
 	}
-	hubKey, loadKeyError := wire.LoadKey(config.Hub.Trust)
-	if loadKeyError != nil {
-		return keypair, hubKey, fmt.Errorf("hub.trust: %w", loadKeyError)
+	keys := make([]wire.Key, len(config.Hubs))
+	for index, peer := range config.Hubs {
+		hubKey, loadKeyError := wire.LoadKey(peer.Trust)
+		if loadKeyError != nil {
+			return keypair, nil, fmt.Errorf("hubs[%d].trust: %w", index, loadKeyError)
+		}
+		keys[index] = hubKey
 	}
-	return keypair, hubKey, nil
+
+	return keypair, keys, nil
 }

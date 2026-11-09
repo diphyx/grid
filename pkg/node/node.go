@@ -20,7 +20,7 @@ import (
 type Node struct {
 	config  *Config
 	key     wire.Keypair
-	hubKey  wire.Key
+	hubs    []*hubLink
 	log     *slog.Logger
 	history *history.Log
 	shares  *shares
@@ -29,13 +29,11 @@ type Node struct {
 	mutex sync.Mutex
 	jobs  map[string]*Job
 
-	listener  net.Listener
-	posts     chan struct{} // wakes the signal loop
-	hubOnline atomic.Bool
-	closing   atomic.Bool
-	running   sync.WaitGroup // one per running cmd; Close waits for them to stop
-	stop      chan struct{}
-	sessions  sync.Map // *wire.Session → struct{}: open hub connections, closed by Close
+	listener net.Listener
+	closing  atomic.Bool
+	running  sync.WaitGroup // one per running cmd; Close waits for them to stop
+	stop     chan struct{}
+	sessions sync.Map // *wire.Session → struct{}: open hub connections, closed by Close
 }
 
 // New fills the config's defaults, loads keys, and reopens the jobs left on disk.
@@ -44,15 +42,15 @@ func New(config *Config, log *slog.Logger) (*Node, error) {
 	if checkError != nil {
 		return nil, checkError
 	}
-	key, hubKey, keysError := config.Keys()
+	key, hubKeys, keysError := config.Keys()
 	if keysError != nil {
 		return nil, keysError
 	}
 	if log == nil {
 		log = slog.Default()
 	}
-	self := &Node{config: config, key: key, hubKey: hubKey, log: log, started: time.Now(),
-		jobs: map[string]*Job{}, posts: make(chan struct{}, 1), stop: make(chan struct{})}
+	self := &Node{config: config, key: key, hubs: newHubLinks(config.Hubs, hubKeys), log: log, started: time.Now(),
+		jobs: map[string]*Job{}, stop: make(chan struct{})}
 	mkdirAllError := os.MkdirAll(self.jobsDir(), 0o755)
 	if mkdirAllError != nil {
 		return nil, mkdirAllError
@@ -75,7 +73,8 @@ func New(config *Config, log *slog.Logger) (*Node, error) {
 
 func (node *Node) jobsDir() string { return node.config.Jobs.Path }
 
-// load reopens jobs after a restart; a cmd that was running is failed.
+// load reopens jobs after a restart; a cmd that was running is failed. A job of a hub no
+// longer in the config is dropped: no hub could reach it, and it would hold a slot.
 func (node *Node) load() error {
 	entries, readDirError := os.ReadDir(node.jobsDir())
 	if readDirError != nil {
@@ -88,6 +87,11 @@ func (node *Node) load() error {
 		job, loadJobError := loadJob(filepath.Join(node.jobsDir(), entry.Name()))
 		if loadJobError != nil {
 			node.log.Error("job not loaded", "job", entry.Name(), "err", loadJobError)
+			continue
+		}
+		if node.hubAt(job.meta.Hub) == nil {
+			node.dropUntrusted(job)
+
 			continue
 		}
 		job.onState = node.onState
@@ -137,9 +141,11 @@ func (node *Node) Serve() error {
 	node.history.Add(history.Entry{Kind: history.KIND_NODE, Event: "started", Subject: node.Addr()})
 	go node.janitor()
 	if node.config.Signal {
-		go node.signal()
+		for _, link := range node.hubs {
+			go node.signal(link)
+		}
 	}
-	peers := wire.Peers{node.config.Hub.IP: node.hubKey}
+	peers := node.peers()
 	for {
 		socket, acceptError := node.listener.Accept()
 		if acceptError != nil {
@@ -157,15 +163,16 @@ func (node *Node) Serve() error {
 				node.log.Debug("handshake refused", "ip", wire.RemoteIP(socket), "err", serverError)
 				// a stranger's IP is closed before the handshake: noise, not history
 				if !errors.Is(serverError, wire.ErrPeerIP) {
-					node.history.Add(history.Entry{Kind: history.KIND_HUB, Event: "refused", Subject: wire.RemoteIP(socket), Message: serverError.Error()})
+					node.history.Add(history.Entry{Kind: history.KIND_HUB, Event: "refused", Subject: wire.RemoteIP(socket), Hub: wire.RemoteIP(socket), Message: serverError.Error()})
 				}
 				socket.Close()
 
 				return
 			}
+			link := node.hubAt(wire.RemoteIP(socket))
 			session := wire.NewSession(connection)
 			node.sessions.Store(session, struct{}{})
-			_ = session.Run(node.handle)
+			_ = session.Run(func(request *wire.Request) { node.handle(link, request) })
 			node.sessions.Delete(session)
 		}()
 	}

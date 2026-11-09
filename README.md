@@ -72,7 +72,7 @@ grid = 2
 identity = "/etc/grid/node.key"
 tags = ["build"]
 
-[hub]
+[[hubs]]
 ip = "10.0.0.1"
 trust = "/etc/grid/hub.pub"
 

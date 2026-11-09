@@ -31,6 +31,7 @@ type FakeNode struct {
 	shares   map[string]fshare // push id → its tar's entries
 	calls    map[string]*callStat
 	listener net.Listener
+	hubs     sync.Map // *wire.Session → the IP of the hub on it
 	posts    chan postItem
 	stop     chan struct{}
 }
@@ -42,6 +43,7 @@ type callStat struct {
 
 type fjob struct {
 	id      string
+	hub     string // the IP of the hub that opened it
 	mutex   sync.Mutex
 	files   map[string]wire.Entry
 	partial map[string][]byte
@@ -113,7 +115,9 @@ func (fakeNode *FakeNode) conn(socket net.Conn) {
 	session.OnBad = func(envelope *wire.Envelope, problem error) {
 		fakeNode.bad("§4", "frame from the hub", fmt.Errorf("%v: %+v", problem, envelope))
 	}
+	fakeNode.hubs.Store(session, wire.RemoteIP(socket))
 	_ = session.Run(fakeNode.handle)
+	fakeNode.hubs.Delete(session)
 }
 
 func (fakeNode *FakeNode) bad(spec, name string, problem error) {
@@ -230,7 +234,16 @@ func (fakeNode *FakeNode) handle(request *wire.Request) {
 	}
 }
 
-func (fakeNode *FakeNode) job(id string) (*fjob, error) {
+// hubOf is the IP of the hub making the request.
+func (fakeNode *FakeNode) hubOf(request *wire.Request) string {
+	ip, _ := fakeNode.hubs.Load(request.Session())
+	text, _ := ip.(string)
+
+	return text
+}
+
+// job finds a job of the hub making the request; another hub's is unknown.
+func (fakeNode *FakeNode) job(request *wire.Request, id string) (*fjob, error) {
 	checkJobError := wire.CheckJob(id)
 	if checkJobError != nil {
 		return nil, checkJobError
@@ -240,7 +253,7 @@ func (fakeNode *FakeNode) job(id string) (*fjob, error) {
 	fakeNode.mutex.Unlock()
 	if job != nil {
 		job.mutex.Lock()
-		gone := job.dropped
+		gone := job.dropped || job.hub != fakeNode.hubOf(request)
 		job.mutex.Unlock()
 		if gone {
 			job = nil
@@ -259,7 +272,7 @@ func (fakeNode *FakeNode) withJob(request *wire.Request, callback func(job *fjob
 	if decodeBodyError != nil {
 		return decodeBodyError
 	}
-	job, jobError := fakeNode.job(body.Job)
+	job, jobError := fakeNode.job(request, body.Job)
 	if jobError != nil {
 		return jobError
 	}
@@ -289,7 +302,7 @@ func (fakeNode *FakeNode) open(request *wire.Request) error {
 	}
 	id := make([]byte, 16)
 	rand.Read(id)
-	job := &fjob{id: hex.EncodeToString(id), files: map[string]wire.Entry{}, partial: map[string][]byte{},
+	job := &fjob{id: hex.EncodeToString(id), hub: fakeNode.hubOf(request), files: map[string]wire.Entry{}, partial: map[string][]byte{},
 		state: wire.State{State: wire.STATE_IDLE}, changed: make(chan struct{}), used: time.Now()}
 	fakeNode.jobs[job.id] = job
 	fakeNode.mutex.Unlock()

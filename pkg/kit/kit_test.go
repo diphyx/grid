@@ -1,6 +1,7 @@
 package kit
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -14,7 +15,7 @@ import (
 func TestFakeNode(t *testing.T) {
 	hub, _ := wire.GenerateKeypair(nil)
 	node, _ := wire.GenerateKeypair(nil)
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", ":0") // 127.0.0.1 for the hub, ::1 for the second hub
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +25,8 @@ func TestFakeNode(t *testing.T) {
 	}
 	sigAddr := sig.Addr().String()
 	sig.Close()
-	f := &FakeNode{Key: node, Peers: wire.Peers{"127.0.0.1": hub.Public}, Limit: 2, Share: true, Hub: sigAddr, HubKey: hub.Public}
+	other, _ := wire.GenerateKeypair(nil)
+	f := &FakeNode{Key: node, Peers: wire.Peers{"127.0.0.1": hub.Public, "::1": other.Public}, Limit: 2, Share: true, Hub: sigAddr, HubKey: hub.Public}
 	go f.Serve(ln)
 	defer f.Close()
 
@@ -33,7 +35,8 @@ func TestFakeNode(t *testing.T) {
 		out = os.Stdout
 	}
 	r := NewReport(out, false)
-	TestNode(NodeTarget{Addr: ln.Addr().String(), NodeKey: node.Public, Hub: hub, Limit: 2, Share: true, Listen: sigAddr, Wait: 10 * time.Second}, r)
+	addr := fmt.Sprintf("127.0.0.1:%d", ln.Addr().(*net.TCPAddr).Port)
+	TestNode(NodeTarget{Addr: addr, Other: other, OtherAddr: fmt.Sprintf("[::1]:%d", ln.Addr().(*net.TCPAddr).Port), NodeKey: node.Public, Hub: hub, Limit: 2, Share: true, Listen: sigAddr, Wait: 10 * time.Second}, r)
 	for _, x := range r.All {
 		if !x.Pass {
 			t.Errorf("%s %s: %s", x.Spec, x.Name, x.Note)

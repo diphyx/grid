@@ -11,27 +11,28 @@ import (
 	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
-func (node *Node) handle(request *wire.Request) {
+// handle serves one call from the hub at link.
+func (node *Node) handle(link *hubLink, request *wire.Request) {
 	var problem error
 	switch request.Call {
 	case wire.CALL_OPEN:
 		{
-			problem = node.open(request)
+			problem = node.open(link, request)
 		}
 	case wire.CALL_EXEC:
 		{
 			var body wire.Exec
-			problem = node.withJob(request, &body, func(job *Job) error { return node.exec(request, job, body) })
+			problem = node.withJob(link, request, &body, func(job *Job) error { return node.exec(request, job, body) })
 		}
 	case wire.CALL_TAIL:
 		{
 			var body wire.Tail
-			problem = node.withJob(request, &body, func(job *Job) error { return node.tail(request, job, body) })
+			problem = node.withJob(link, request, &body, func(job *Job) error { return node.tail(request, job, body) })
 		}
 	case wire.CALL_STAT:
 		{
 			var body wire.JobRef
-			problem = node.withJob(request, &body, func(job *Job) error {
+			problem = node.withJob(link, request, &body, func(job *Job) error {
 				job.mutex.Lock()
 				state := job.meta.State
 				job.mutex.Unlock()
@@ -42,7 +43,7 @@ func (node *Node) handle(request *wire.Request) {
 	case wire.CALL_KILL:
 		{
 			var body wire.JobRef
-			problem = node.withJob(request, &body, func(job *Job) error {
+			problem = node.withJob(link, request, &body, func(job *Job) error {
 				job.mutex.Lock()
 				if job.proc != nil {
 					job.proc.halt("kill")
@@ -55,17 +56,17 @@ func (node *Node) handle(request *wire.Request) {
 	case wire.CALL_PUSH:
 		{
 			var body wire.Push
-			problem = node.withJob(request, &body, func(job *Job) error { return node.push(request, job, body) })
+			problem = node.withJob(link, request, &body, func(job *Job) error { return node.push(request, job, body) })
 		}
 	case wire.CALL_PULL:
 		{
 			var body wire.Pull
-			problem = node.withJob(request, &body, func(job *Job) error { return node.pull(request, job, body) })
+			problem = node.withJob(link, request, &body, func(job *Job) error { return node.pull(request, job, body) })
 		}
 	case wire.CALL_DROP:
 		{
 			var body wire.JobRef
-			problem = node.withJob(request, &body, func(job *Job) error { return node.drop(request, job) })
+			problem = node.withJob(link, request, &body, func(job *Job) error { return node.drop(request, job) })
 		}
 	default:
 		{
@@ -109,8 +110,9 @@ func jobID(value any) string {
 	return ""
 }
 
-// withJob decodes the body, finds the job, resets expires, and runs fn.
-func (node *Node) withJob(request *wire.Request, body jobOf, callback func(job *Job) error) error {
+// withJob decodes the body, finds the job, resets expires, and runs fn. A job another hub
+// opened is unknown, as if it did not exist.
+func (node *Node) withJob(link *hubLink, request *wire.Request, body jobOf, callback func(job *Job) error) error {
 	decodeBodyError := wire.DecodeBody(request.Body, body)
 	if decodeBodyError != nil {
 		return decodeBodyError
@@ -118,7 +120,7 @@ func (node *Node) withJob(request *wire.Request, body jobOf, callback func(job *
 	node.mutex.Lock()
 	job := node.jobs[jobID(body)]
 	node.mutex.Unlock()
-	if job == nil {
+	if job == nil || job.meta.Hub != link.ip {
 		return wire.NewReject(wire.UNKNOWN, "no job %s", jobID(body))
 	}
 	job.touch()
@@ -126,7 +128,7 @@ func (node *Node) withJob(request *wire.Request, body jobOf, callback func(job *
 	return callback(job)
 }
 
-func (node *Node) open(request *wire.Request) error {
+func (node *Node) open(link *hubLink, request *wire.Request) error {
 	var body wire.Open
 	decodeBodyError := wire.DecodeBody(request.Body, &body)
 	if decodeBodyError != nil {
@@ -148,14 +150,14 @@ func (node *Node) open(request *wire.Request) error {
 	id := make([]byte, 16)
 	rand.Read(id)
 	now := time.Now()
-	meta := Meta{ID: hex.EncodeToString(id), Tag: body.Tag, Opened: now, Used: now, State: wire.State{State: wire.STATE_IDLE}}
+	meta := Meta{ID: hex.EncodeToString(id), Tag: body.Tag, Hub: link.ip, Opened: now, Used: now, State: wire.State{State: wire.STATE_IDLE}}
 	job, newJobError := newJob(filepath.Join(node.jobsDir(), meta.ID), meta)
 	if newJobError != nil {
 		return fmt.Errorf("open: %w", newJobError)
 	}
 	job.onState = node.onState
 	node.jobs[meta.ID] = job
-	node.log.Debug("open", "job", meta.ID, "tag", body.Tag)
+	node.log.Debug("open", "job", meta.ID, "tag", body.Tag, "hub", link.ip)
 
 	return request.OK(wire.OpenOK{Job: meta.ID, Expires: uint64(node.config.Jobs.Expires.D().Milliseconds())})
 }
@@ -276,7 +278,7 @@ func (node *Node) dropJob(job *Job, why string) {
 	node.mutex.Unlock()
 	node.shares.unlink(job)
 	job.mutex.Lock()
-	node.history.Add(history.Entry{Kind: history.KIND_JOB, Event: why, Subject: job.ID(), Took: time.Since(job.meta.Opened)})
+	node.history.Add(history.Entry{Kind: history.KIND_JOB, Event: why, Subject: job.ID(), Hub: job.meta.Hub, Took: time.Since(job.meta.Opened)})
 	removeError := job.remove()
 	job.mutex.Unlock()
 	if removeError != nil {

@@ -44,7 +44,7 @@ trust = "/etc/grid/node-a.pub"
 
 ```toml
 # node.toml: the hub by its container IP
-[hub]
+[[hubs]]
 ip = "172.30.0.10"
 trust = "/etc/grid/hub.pub"
 ```

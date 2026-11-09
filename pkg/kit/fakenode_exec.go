@@ -15,7 +15,7 @@ func (fakeNode *FakeNode) emit(job *fjob, typ string, data any) {
 	job.events = append(job.events, event)
 	if typ == wire.EVENT_STATE {
 		job.state = data.(wire.State)
-		if fakeNode.Hub != "" {
+		if fakeNode.Hub != "" && job.hub == fakeNode.signalIP() {
 			select {
 			case fakeNode.posts <- postItem{job.id, event}:
 			default:
@@ -34,7 +34,7 @@ func (fakeNode *FakeNode) exec(request *wire.Request) error {
 	if decodeBodyError != nil {
 		return decodeBodyError
 	}
-	job, jobError := fakeNode.job(body.Job)
+	job, jobError := fakeNode.job(request, body.Job)
 	if jobError != nil {
 		return jobError
 	}
@@ -162,7 +162,7 @@ func (fakeNode *FakeNode) tail(request *wire.Request) error {
 	if decodeBodyError != nil {
 		return decodeBodyError
 	}
-	job, jobError := fakeNode.job(body.Job)
+	job, jobError := fakeNode.job(request, body.Job)
 	if jobError != nil {
 		return jobError
 	}
