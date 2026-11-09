@@ -4,6 +4,17 @@
 
 The hub never runs work itself. For each [job](job.md) it picks a node, pushes the files, asks the node to run the steps, follows the output, pulls the results back, and keeps them for you.
 
+## Placing a Job
+
+Nodes report; the hub decides. For each job it picks a node from its `[[nodes]]`:
+
+- **The tag.** Only a node that offers the job's `tag` can take it.
+- **Room.** The node must have room for one more job, under its `[jobs] limit`. With none free, the job stays `queued`, and the hub tries again every 2 s.
+- **Share.** For a job with a [share push](job.md#shared-input), the hub prefers a node whose share is on.
+- **Retries.** If the node is lost, the job starts over on another, up to the job's `retries`.
+
+A job whose tag no node offers waits until one does: add one to the config and restart the hub.
+
 ## Config
 
 The hub's config, `/etc/grid/hub.toml`, lists the nodes it may use:

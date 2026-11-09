@@ -69,58 +69,11 @@ grid node run
 
 The file follows the same [TOML rules](job.md#the-job-file) as job files. The config is read at start: after a change, restart the node. Its jobs are kept; a cmd that was running ends `failed` with "node restarted", which fails its job.
 
-## Hubs
-
-Each `[[hubs]]` entry is a hub the node accepts: that IP, with that key. Hubs share the node, not their jobs:
-
-- **A job is its opener's.** The hub that opened a job is the only one that can call on it. To any other hub it is `unknown`: it can neither see, run, tail, kill, pull, nor drop it.
-- **One pool.** `[jobs] limit` counts the jobs of every hub together; when it is reached, every hub's new jobs wait.
-- **One share.** The share is for every hub: a push one hub made is a hit for the others. A hub can learn from that hit that the content is already there, so trust only hubs that may know each other's inputs.
-- **Signal per hub.** With `signal`, the node beats to every hub on a connection of its own, and posts a job's updates only to its hub. A hub that is down holds up no other.
-- **Removing a hub.** At the next start, the jobs of a hub no longer in the config are dropped: no hub could reach them, and they would hold slots. The history shows each as `orphaned`.
-
-## Share
-
-A job can mark a push `share` ([Job](job.md#shared-input)): the node keeps it in its share, read only, and links it into each job that pushes the same content. The input travels once to the node, not once per job.
-
-- **A share is its content.** Its id is the tar's sha256; the same files are the same share, from any job.
-- **Linked, not copied.** In the space, the push's `to` is a link to the share: a symlink, or a junction on Windows. A cmd reads it like any folder, and must not write to it.
-- **Kept while used.** A share a job links stays while that job does. After that, it goes once no job used it for `expires`, or, least recently used first, when the share would pass its `limit`.
-- **Optional.** With `[share]` off, too full, or a share that cannot be linked, the push goes into the space as usual, and the hub knows from the reply. The job runs either way.
-
-## History
-
-The node keeps an event log, read with `grid node history`:
-
-| Kind    | Events                                                                     |
-| ------- | -------------------------------------------------------------------------- |
-| `job`   | a cmd finished, a job dropped, expired, or orphaned, with how long it took |
-| `share` | a share installed or removed, and why                                      |
-| `node`  | the node started or stopped                                                |
-| `hub`   | a hub connected or disconnected, with `signal`; a refused handshake        |
-
-Each `job` and `hub` entry names its hub; `--hub IP` shows one hub's.
-
-```
-AT                   KIND   EVENT    SUBJECT                                 HUB       TOOK     MESSAGE
-2026-11-08 10:01:58  share  install  9f3ac01b7e4d2a6c8b5f0e1d3a7c21e4        -         -        2GB
-2026-11-08 10:02:53  job    done     a1b2c3d4e5f60718293a4b5c6d7e8f90/build  10.0.0.1  42.318s
-2026-11-08 10:16:20  job    drop     a1b2c3d4e5f60718293a4b5c6d7e8f90        10.0.0.1  1m5s
-```
-
 ## Cmds
 
 A cmd is any program, under a name. A step calls it by that name and can only add to it:
 
-```
-┌──────────────────┐     ┌─────────────────┐     ┌────────────────┐
-│ node.toml        │     │ job step        │     │ what runs      │
-│                  │     │                 │     │                │
-│ [cmds.build]     │  +  │ cmd  = "build"  │  ═▶ │ make -j8 linux │
-│ exec = make -j8  │     │ args = [linux]  │     │ in the space,  │
-└──────────────────┘     │ env  = CC=clang │     │ with CC=clang  │
-                         └─────────────────┘     └────────────────┘
-```
+![node.toml offers the cmd build, exec = make -j8; a job step asks for cmd build with args linux and env CC=clang; what runs is make -j8 linux, in the space, with CC=clang.](_media/node-cmds.svg)
 
 Nothing outside `[cmds.*]` can run, so whoever runs the node decides what may run on it.
 
@@ -189,6 +142,47 @@ At the hub, the event's type is the name with `evt.` in front, so a cmd's names 
 A line that is not an event, like one without `[name]`, arrives as an `err` line instead, so a mistake shows up in the output and the job carries on. Events arrive within a moment of being written, and always before the step ends.
 
 Results do not go here: what a job produces goes in files, which you [pull](job.md#the-job-file).
+
+## Hubs
+
+Each `[[hubs]]` entry is a hub the node accepts: that IP, with that key. Hubs share the node, not their jobs:
+
+- **A job is its opener's.** The hub that opened a job is the only one that can call on it. To any other hub it is `unknown`: it can neither see, run, tail, kill, pull, nor drop it.
+- **One pool.** `[jobs] limit` counts the jobs of every hub together; when it is reached, every hub's new jobs wait.
+- **One share.** The share is for every hub: a push one hub made is a hit for the others. A hub can learn from that hit that the content is already there, so trust only hubs that may know each other's inputs.
+- **Signal per hub.** With `signal`, the node beats to every hub on a connection of its own, and posts a job's updates only to its hub. A hub that is down holds up no other.
+- **Removing a hub.** At the next start, the jobs of a hub no longer in the config are dropped: no hub could reach them, and they would hold slots. The history shows each as `orphaned`.
+
+![Two hubs: Node ALPHA trusts both, and its two slots are one pool for both hubs' jobs; Node BETA trusts only Hub BETA. A job goes back only to the hub that sent it.](_media/multi-hub.svg)
+
+## Share
+
+A job can mark a push `share` ([Job](job.md#shared-input)): the node keeps it in its share, read only, and links it into each job that pushes the same content. The input travels once to the node, not once per job.
+
+- **A share is its content.** Its id is the tar's sha256; the same files are the same share, from any job.
+- **Linked, not copied.** In the space, the push's `to` is a link to the share: a symlink, or a junction on Windows. A cmd reads it like any folder, and must not write to it.
+- **Kept while used.** A share a job links stays while that job does. After that, it goes once no job used it for `expires`, or, least recently used first, when the share would pass its `limit`.
+- **Optional.** With `[share]` off, too full, or a share that cannot be linked, the push goes into the space as usual, and the hub knows from the reply. The job runs either way.
+
+## History
+
+The node keeps an event log, read with `grid node history`:
+
+| Kind    | Events                                                                     |
+| ------- | -------------------------------------------------------------------------- |
+| `job`   | a cmd finished, a job dropped, expired, or orphaned, with how long it took |
+| `share` | a share installed or removed, and why                                      |
+| `node`  | the node started or stopped                                                |
+| `hub`   | a hub connected or disconnected, with `signal`; a refused handshake        |
+
+Each `job` and `hub` entry names its hub; `--hub IP` shows one hub's.
+
+```
+AT                   KIND   EVENT    SUBJECT                                 HUB       TOOK     MESSAGE
+2026-11-08 10:01:58  share  install  9f3ac01b7e4d2a6c8b5f0e1d3a7c21e4        -         -        2GB
+2026-11-08 10:02:53  job    done     a1b2c3d4e5f60718293a4b5c6d7e8f90/build  10.0.0.1  42.318s
+2026-11-08 10:16:20  job    drop     a1b2c3d4e5f60718293a4b5c6d7e8f90        10.0.0.1  1m5s
+```
 
 ## CLI
 

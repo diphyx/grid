@@ -29,20 +29,7 @@ A step can name only a cmd the node offers. There is no way to run anything else
 
 Every job runs in its own folder on the node, its **space**. Files move in and out of it in three parts, always in this order:
 
-```
-            hub                                       node
-  ┌──────────────────────┐                ┌──────────────────────────┐
-  │ build.toml           │                │ the job's space          │
-  │                      │                │                          │
-  │ [[push]]  ./src      │ ── files in ─▶ │ src/                     │
-  │                      │                │                          │
-  │ [[steps]] build      │ ──── run ────▶ │ make -j8 linux           │
-  │   args = [linux]     │                │   with CC=clang          │
-  │   env  = CC=clang    │ ◀── output ─── │                          │
-  │                      │                │                          │
-  │ [[pull]]  out        │ ◀─ files out ─ │ out/                     │
-  └──────────────────────┘                └──────────────────────────┘
-```
+![The job file's three parts, on the hub, and what each does in the job's space on the node: push ./src brings the files in as src/; the build step, with args linux and env CC=clang, runs make -j8 linux, and its output comes back; pull out brings out/ back.](_media/job-parts.svg)
 
 | Part      | When             | What happens                                                 |
 | --------- | ---------------- | ------------------------------------------------------------ |
@@ -96,6 +83,8 @@ share = true
 - `to` cannot be the space itself. No other push or pull may be at `to` or under it, and a pull may not hold it: such a job is rejected at submit.
 - A node with its share off, or full, takes it as a normal push; the job runs either way. `grid hub tail` shows how each push went: `push model: hit` (the node had it), `installed` (sent, and kept), or `normal`.
 
+![Job 1 sends its shared file once: Node ALPHA keeps it (installed). Job 3 has the same shared file: Node ALPHA has it already (a hit), so only its other files are sent. Node BETA, with no share, runs job 2 as usual.](_media/share-push.svg)
+
 > **TOML rules,** for job files and both configs: an unknown key is an error that names the key and its line; top-level keys come before the first `[table]`; durations are strings, like `"10m"`, `"30d"`, or `"0"`.
 
 Submit it, and copy the results out when it ends:
@@ -110,22 +99,7 @@ grid hub pull <id> ./result
 
 ## Job States
 
-```
- submit
-   │
-   ▼
-┌────────┐  a node with the tag   ┌─────────┐
-│ queued │ ─ has room ──────────▶ │ running │ ◀─┐  node lost, retries left:
-└────────┘                        └────┬────┘ ──┘  start over on another node
-                                       │
-        ╭──────────────────────────────┼──────────────────────╮
-        │ every step done              │ a step failed, or    │ grid hub kill
-        ▼                              ▼ the node was lost,   ▼
-                                         no retries left
-    ┌──────┐                      ┌────────┐             ┌─────────┐
-    │ done │                      │ failed │             │ stopped │
-    └──────┘                      └────────┘             └─────────┘
-```
+![Job states: submit makes it queued; when a node with the tag has room, running; if the node is lost with retries left, it starts over on another; it ends done when every step is done, failed when a step failed or the node was lost with no retries left, or stopped with grid hub kill.](_media/job-states.svg)
 
 | State     | Means                                                                   |
 | --------- | ----------------------------------------------------------------------- |
@@ -171,17 +145,9 @@ Nodes report; the hub decides.
 | the hub restarts       | running jobs are picked up again, where they were                               |
 | the node restarts      | a cmd that was running ends `failed`, "node restarted"                          |
 
-```
-┌─────┐  job   ┌────────┐
-│ hub │ ─────▶ │ node-1 │  ✗ gone: 15 s without a heartbeat (signal),
-└─────┘        └────────┘    or 30 s of failed calls
-   │
-   │  retries left: start over on another node
-   ▼
-┌────────┐
-│ node-2 │  ✓ done
-└────────┘
-```
+A node is gone after 15 s without a heartbeat (with `signal`), or after 30 s of failed calls. With retries left, its job starts over on another node:
+
+![Node ALPHA is lost mid-run: its job fails, goes back to queued, waits for Node BETA to be free, and starts over there until it is done.](_media/node-failover.svg)
 
 To see why a job failed:
 

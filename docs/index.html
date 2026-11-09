@@ -11,7 +11,10 @@
                 --theme-color: #42b883;
             }
             .sidebar-nav > ul > li > a {
-                font-weight: bold;
+                font-weight: 500;
+            }
+            .sidebar-nav > ul > li.active > a {
+                font-weight: 700;
             }
             .markdown-section code {
                 border-radius: 4px;
@@ -94,6 +97,21 @@
                                 var link = item.querySelector(":scope > a");
                                 var href = link ? link.getAttribute("href").split("?")[0] : null;
                                 item.classList.toggle("active", href === path);
+                            });
+
+                            // the animations (_media/*.svg) play from their start when each comes into
+                            // view: a fresh URL gives a fresh image, whose clock starts at 0 (a cached
+                            // one would carry on where it was)
+                            var seen = new IntersectionObserver(function (entries) {
+                                entries.forEach(function (entry) {
+                                    if (!entry.isIntersecting) return;
+                                    var img = entry.target;
+                                    seen.unobserve(img);
+                                    img.src = img.getAttribute("src").split("?")[0] + "?t=" + Date.now();
+                                });
+                            }, { threshold: 0.3 });
+                            document.querySelectorAll('.markdown-section img[src*="_media/"][src$=".svg"]').forEach(function (img) {
+                                seen.observe(img);
                             });
                         });
                     },

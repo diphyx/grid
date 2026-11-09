@@ -1,6 +1,6 @@
 # Agents
 
-> Single-file, end-to-end reference for AI coding agents setting up or using grid. Reading this once gives the full model: hub, node, keys, configs, job files, CLI, Docker, events, failures, setups, and the test kit.
+> Single-file, end-to-end reference for AI coding agents setting up or using grid. Reading this once gives the full model: hub, node, keys, configs, job files, CLI, Docker, events, failures, deploy, and the test kit.
 
 - **Module:** `github.com/diphyx/grid/v2` (Go 1.27); one binary, `grid`
 - **Images:** `ghcr.io/diphyx/grid-hub`, `ghcr.io/diphyx/grid-node`; tags `2` (the generation), `2.1`, `2.1.0`, `latest`
@@ -221,7 +221,7 @@ COPY cmds/ /opt/cmds/
 | node restart | jobs stay; a running cmd → `failed`, "node restarted"          |
 | kill         | immediate, also mid-transfer → `stopped`                       |
 
-## 11. Setups
+## 11. Deploy
 
 | Setup                            | IPs in the configs     | Open TCP `9420`                                                                       |
 | -------------------------------- | ---------------------- | ------------------------------------------------------------------------------------- |

@@ -1,10 +1,9 @@
 - [Overview](/)
+- [Get Started](/start.md)
 - [Job](/job.md)
-- Components
-    - [Hub](/hub.md)
-    - [Node](/node.md)
-- Reference
-    - [Setups](/setups.md)
-    - [Protocol](/protocol.md)
-    - [Versions](/versions.md)
-    - [Agents](/AGENTS.md)
+- [Hub](/hub.md)
+- [Node](/node.md)
+- [Deploy](/deploy.md)
+- [Protocol](/protocol.md)
+- [Versions](/versions.md)
+- [Agents](/AGENTS.md)

@@ -12,19 +12,7 @@ This page gives the picture; [`spec/SPEC.md`](https://github.com/diphyx/grid/blo
 
 The hub drives each job with a few calls. On the node, a job is just its space and the cmds run in it.
 
-```
-hub                                 node
- │── open {tag} ─────────────────────▶│  makes the space
- │◀─────────────────── {job, expires} │
- │── tail {job} ─────────────────────▶│  events start, and keep coming
- │── push {job} + tar ───────────────▶│  files in
- │◀───────────────────────── {sha256} │
- │── exec {job, cmd, args, env} ─────▶│  runs the cmd on its own
- │◀─────────────── events: log, state │
- │── pull {job, path} ───────────────▶│
- │◀──────── file list + tar, {sha256} │  files out
- │── drop {job} ─────────────────────▶│  deletes the space
-```
+![The hub's calls for one job: open {tag} makes the space and returns {job, expires}; tail {job} starts the events; push {job} + tar brings the files in and returns {sha256}; exec {job, cmd, args, env} runs the cmd, and events come back (log, state); pull {job, path} returns a file list and tar with {sha256}: files out; drop {job} deletes the space.](_media/protocol-calls.svg)
 
 - One `exec` runs at a time; the next starts only after the last one ended.
 - After `exec`, the node runs the cmd on its own; the hub does not have to stay connected.
@@ -53,17 +41,7 @@ Instead of an answer, any call can get a `reject` with a reason: `full` (no room
 
 ## On the Wire
 
-```
-┌────────────────────────────────────────────────────────────┐
-│ envelope   CBOR: {id, call, body}, {id, ok}, {id, data}, … │
-├────────────────────────────────────────────────────────────┤
-│ frame      u16 length + ciphertext, max 65535 bytes        │
-├────────────────────────────────────────────────────────────┤
-│ Noise IK   both sides proven, everything encrypted         │
-├────────────────────────────────────────────────────────────┤
-│ TCP        port 9420                                       │
-└────────────────────────────────────────────────────────────┘
-```
+![Each layer carries the one inside it: TCP, port 9420, carries Noise IK, both sides proven and everything encrypted; it carries frames, a u16 length and ciphertext, at most 65535 bytes; they carry envelopes, CBOR {id, call, body}, {id, ok}, {id, data}.](_media/protocol-layers.svg)
 
 | Envelope                    | Is            |
 | --------------------------- | ------------- |
@@ -82,17 +60,7 @@ Instead of an answer, any call can get a `reject` with a reason: `full` (no room
 
 A push the job marks `share` is kept by the node for the jobs after it, so the same input travels once per node, not once per job. Its `id` is the tar's sha256, first 16 bytes: the same id is the same content.
 
-```
-hub                                   node
- │── push {job, path, id} ───────────▶│
- │◀─ data {offset: 0, have: true} ────│  hit: it has the share, linked at path
- │── end {} ─────────────────────────▶│  no bytes
- │◀─ ok {sha256, share: true} ────────│
-
- │◀─ data {offset, have: false} ──────│  miss: the tar comes as usual
- │── data … end {} ──────────────────▶│
- │◀─ ok {sha256, share: true} ────────│  kept, and linked at path
-```
+![A share push by id. A hit: push {job, path, id}, the node answers data {offset: 0, have: true}, the hub ends with end {} and no bytes, and ok {sha256, share: true}: linked at path. A miss: data {offset, have: false}, the tar comes as usual (data … end {}), and ok {sha256, share: true}: kept, and linked at path.](_media/protocol-share.svg)
 
 - The node checks a new share's id against the tar's sha256, makes it read only, and links it into the space at `path`: a symlink, or a junction on Windows. A cmd reads it there and must not write to it.
 - With its share off, full, or unable to link, the node takes the tar into the space as usual and answers `share: false`; the job runs either way.
@@ -100,7 +68,7 @@ hub                                   node
 
 ## Who Dials Whom
 
-The hub always dials the node for job calls; the node dials the hub only for `beat` and `post`, with `signal`. [Setups](setups.md) shows it per setup.
+The hub always dials the node for job calls; the node dials the hub only for `beat` and `post`, with `signal`. [Deploy](deploy.md) shows it per setup.
 
 ## Test Kit
 

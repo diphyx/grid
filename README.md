@@ -2,11 +2,11 @@
 
 Send jobs to machines you control, and get the results back.
 
-**Docs: [diphyx.github.io/grid](https://diphyx.github.io/grid/)** · [Overview](docs/README.md) · [Job](docs/job.md) · [Hub](docs/hub.md) · [Node](docs/node.md) · [Setups](docs/setups.md) · [Protocol](docs/protocol.md) · [Agents](docs/AGENTS.md)
+**Docs: [diphyx.github.io/grid](https://diphyx.github.io/grid/)** · [Overview](docs/README.md) · [Get Started](docs/start.md) · [Job](docs/job.md) · [Hub](docs/hub.md) · [Node](docs/node.md) · [Deploy](docs/deploy.md) · [Protocol](docs/protocol.md) · [Versions](docs/versions.md) · [Agents](docs/AGENTS.md)
 
 ## 1. What It Is
 
-grid has two sides that talk over one protocol. A **hub** takes your jobs, picks where each one runs, and keeps the results. A **node** is a machine, container, or VM that offers a fixed set of commands and runs jobs with them. They talk over one TCP port, `9420`, encrypted with a key pair on each side. More ways to install, like release archives and Docker images: [Install](docs/README.md#install).
+grid has two sides that talk over one protocol. A **hub** takes your jobs, picks where each one runs, and keeps the results. A **node** is a machine, container, or VM that offers a fixed set of commands and runs jobs with them. They talk over one TCP port, `9420`, encrypted with a key pair on each side. More ways to install, like release archives and Docker images: [Get Started](docs/start.md#1-install).
 
 ```bash
 # install: Homebrew, or a release archive
@@ -16,7 +16,20 @@ brew install diphyx/tap/grid
 grid key new /etc/grid/hub
 ```
 
-## 2. Job
+## 2. Where It Sits
+
+For jobs that take input, run for minutes or hours, report as they go, and give files back. Between SSH and a cluster:
+
+|               | SSH, Ansible       | **grid**                  | Slurm, Kubernetes   |
+| ------------- | ------------------ | ------------------------- | ------------------- |
+| **What runs** | any command        | the node's fixed commands | any script or image |
+| **Files**     | you copy them      | in and out with the job   | shared storage      |
+| **Where**     | logged-in machines | containers, LAN, internet | the cluster         |
+| **To set up** | SSH access         | one binary per side       | a cluster           |
+
+More: [Where It Sits](https://diphyx.github.io/grid/#/?id=where-it-sits).
+
+## 3. Job
 
 The job is what hub and node share. What a node can run is fixed by the node: its config names a few **cmds**, like `build` → `make -j8`. A job cannot bring its own commands; it is a request to run some of those cmds, by name, with its own `args` and `env`, on its own files:
 
@@ -41,7 +54,7 @@ args = ["linux"]
 path = "out"
 ```
 
-## 3. Hub
+## 4. Hub
 
 ```toml
 # /etc/grid/hub.toml
@@ -64,7 +77,7 @@ grid hub submit build.toml --wait
 grid hub pull <id> ./result
 ```
 
-## 4. Node
+## 5. Node
 
 ```toml
 # /etc/grid/node.toml
@@ -84,11 +97,11 @@ exec = ["make", "-j8"]
 grid node run
 ```
 
-## 5. Reference
+## 6. Reference
 
 | Topic                        | Covers                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
-| [Setups](docs/setups.md)     | One machine with containers, a local network, or the public internet: what changes and what to open  |
+| [Deploy](docs/deploy.md)     | One machine with containers, a local network, or the public internet: what changes and what to open  |
 | [Protocol](docs/protocol.md) | Your own hub or node in any language: the protocol, [`spec/SPEC.md`](spec/SPEC.md), and the test kit |
 | [Agents](docs/AGENTS.md)     | One file with the whole model, for AI coding agents                                                  |
 
