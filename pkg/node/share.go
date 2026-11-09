@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/diphyx/grid/pkg/history"
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/history"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // The share, on disk:

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // TestFakeNode runs every node check against the fake node: the kit tests itself.

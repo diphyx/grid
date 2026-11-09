@@ -9,7 +9,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // Job is what the hub runs: a TOML file, any name (docs/job.md). One job runs on one node,

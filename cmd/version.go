@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // VERSION is the release, set at build time by package.sh and the Dockerfile:
-// -ldflags "-X github.com/diphyx/grid/cmd.VERSION=v1.2.3".
+// -ldflags "-X github.com/diphyx/grid/v2/cmd.VERSION=v1.2.3".
 var VERSION = ""
 
 // version is the release, else the module version from `go install …@v1.2.3`, else "dev".
@@ -24,8 +24,7 @@ func version() string {
 	return "dev"
 }
 
-// printVersion is `grid version`: the release and the protocol it speaks, which are versioned
-// apart; a new protocol comes only with a new major release.
+// printVersion is `grid version`: the release and the protocol of its generation (wire.MAJOR).
 func printVersion() int {
 	fmt.Printf("grid %s (protocol %s)\n", version(), wire.PROLOGUE)
 

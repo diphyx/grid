@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // Config is the node config file, TOML (docs/node.md).
 type Config struct {
+	Grid     int            `toml:"grid"` // the generation it is for: wire.MAJOR; checked in LoadConfig
 	Identity string         `toml:"identity"`
 	Port     int            `toml:"port"`
 	Tags     []string       `toml:"tags"`
@@ -58,9 +59,9 @@ type Cmd struct {
 
 // Defaults.
 const (
-	DEFAULT_JOBS    = "/var/lib/grid/node/jobs"
-	DEFAULT_HISTORY = "/var/lib/grid/node/history"
-	DEFAULT_SHARE   = "/var/lib/grid/node/share"
+	DEFAULT_JOBS    = wire.STATE + "/node/jobs"
+	DEFAULT_HISTORY = wire.STATE + "/node/history"
+	DEFAULT_SHARE   = wire.STATE + "/node/share"
 	DEFAULT_SOCKET  = "/run/grid/node.sock"
 	DEFAULT_CONFIG  = "/etc/grid/node.toml"
 
@@ -72,6 +73,10 @@ func LoadConfig(path string) (*Config, error) {
 	content, readFileError := os.ReadFile(path)
 	if readFileError != nil {
 		return nil, readFileError
+	}
+	majorError := wire.CheckMajor(content)
+	if majorError != nil {
+		return nil, fmt.Errorf("%s: %w", path, majorError)
 	}
 	var config Config
 	decodeError := wire.DecodeTOML(content, &config)

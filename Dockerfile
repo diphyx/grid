@@ -33,7 +33,7 @@ COPY cmd/ cmd/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w -X github.com/diphyx/grid/cmd.VERSION=$VERSION" -o /out/grid .
+    go build -trimpath -ldflags="-s -w -X github.com/diphyx/grid/v2/cmd.VERSION=$VERSION" -o /out/grid .
 
 # Alpine over Debian: the binary is static, and cmds still get `sh` for their scripts.
 FROM alpine:3 AS base

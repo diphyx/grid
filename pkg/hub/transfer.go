@@ -9,7 +9,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // How a push went, in the job's notes.

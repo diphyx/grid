@@ -1,4 +1,4 @@
-# grid spec, version 1
+# grid spec, version 2
 
 The exact protocol. The docs explain it ([`docs/protocol.md`](../docs/protocol.md)); this file fixes it. Every hub and node must match it.
 Golden bytes: [`vectors.json`](vectors.json). The test kit (`grid test`) checks the rest.
@@ -13,7 +13,7 @@ TCP → IP check → Noise handshake → frames → envelopes
 2. The listener closes the connection at once if the IP is not in its config.
 3. Noise handshake, the dialer is the initiator:
    - pattern `Noise_IK_25519_ChaChaPoly_SHA256`
-   - prologue: the ASCII bytes `grid/1`; a mismatch fails the handshake
+   - prologue: the ASCII bytes `grid/2`, the generation; a mismatch fails the handshake
    - the listener checks the dialer's static key against the key for that IP; no match → close
    - timeout 10 s → close
 4. After the handshake, every frame is encrypted.

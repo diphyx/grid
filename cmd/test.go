@@ -10,8 +10,8 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/diphyx/grid/pkg/kit"
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/kit"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // test is `grid test`: the test kit.

@@ -3,7 +3,7 @@ package hub
 import (
 	"net"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // listen accepts the nodes' beat and post, with signal on (§6). Every node in the config may dial.

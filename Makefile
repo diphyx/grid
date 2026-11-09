@@ -57,6 +57,7 @@ build-local:
 .PHONY: release
 release:
 	@test -n "$(VERSION)" || (echo 'usage: make release VERSION=v1.2.3' && exit 1)
+	@.github/scripts/major.sh $(VERSION)
 	@test "$$(git branch --show-current)" = main || (echo 'release from main' && exit 1)
 	@git fetch -q origin main && test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" \
 		|| (echo 'main differs from origin/main: pull or push first' && exit 1)

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // A job on the hub's disk:

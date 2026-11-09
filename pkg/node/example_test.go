@@ -1,6 +1,6 @@
 package node_test
 
-import "github.com/diphyx/grid/pkg/node"
+import "github.com/diphyx/grid/v2/pkg/node"
 
 // How to embed it in a Go program; compiled with the tests so it stays right.
 func serve() error {

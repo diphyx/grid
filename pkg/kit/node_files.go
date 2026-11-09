@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 func (nodeRun *nodeRun) files(session *wire.Session) {

@@ -3,8 +3,8 @@ package node
 import (
 	"time"
 
-	"github.com/diphyx/grid/pkg/history"
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/history"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // onState wakes the signal loop: there is a state event to post (§6).

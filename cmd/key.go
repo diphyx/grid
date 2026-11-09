@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // key is `grid key new <name>` and `grid key pub <private file>`.

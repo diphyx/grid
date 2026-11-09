@@ -1,6 +1,7 @@
 // Package wire is the grid protocol in Go, shared by the kit, the node, and the hub.
 // See spec/SPEC.md; section numbers in comments point there.
 //
+//	major.go     the generation: MAJOR, its state root, the config's grid key
 //	key.go       §2 keys
 //	frame.go     §3 frames
 //	conn.go      §1 connection, Noise IK, keepalive

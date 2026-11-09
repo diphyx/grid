@@ -23,6 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The tag's major is the code's generation (docs/versions.md).
+      - name: Check the major
+        run: .github/scripts/major.sh "$TAG"
+
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod

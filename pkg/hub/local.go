@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // The local API: HTTP over a Unix socket, JSON. The CLI is one client of it.

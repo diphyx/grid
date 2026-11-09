@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/diphyx/grid/pkg/hub"
-	"github.com/diphyx/grid/pkg/node"
+	"github.com/diphyx/grid/v2/pkg/hub"
+	"github.com/diphyx/grid/v2/pkg/node"
 )
 
 const USAGE = `grid: the hub and node daemons, their CLI, keys, and the test kit

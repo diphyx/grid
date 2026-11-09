@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/diphyx/grid/cmd"
+	"github.com/diphyx/grid/v2/cmd"
 )
 
 func main() {

@@ -45,6 +45,7 @@ path = "out"
 
 ```toml
 # /etc/grid/hub.toml
+grid = 2
 identity = "/etc/grid/hub.key"
 
 [[nodes]]
@@ -67,6 +68,7 @@ grid hub pull <id> ./result
 
 ```toml
 # /etc/grid/node.toml
+grid = 2
 identity = "/etc/grid/node.key"
 tags = ["build"]
 

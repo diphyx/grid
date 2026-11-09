@@ -6,14 +6,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // Defaults.
 const (
 	DEFAULT_CONFIG  = "/etc/grid/hub.toml"
-	DEFAULT_JOBS    = "/var/lib/grid/hub/jobs"
-	DEFAULT_HISTORY = "/var/lib/grid/hub/history"
+	DEFAULT_JOBS    = wire.STATE + "/hub/jobs"
+	DEFAULT_HISTORY = wire.STATE + "/hub/history"
 	DEFAULT_SOCKET  = "/run/grid/hub.sock"
 
 	DEFAULT_JOBS_EXPIRES  = wire.Duration(30 * 24 * time.Hour)
@@ -22,6 +22,7 @@ const (
 
 // Config is the hub config file, TOML (docs/hub.md); an embedding project fills it in code.
 type Config struct {
+	Grid     int     `toml:"grid"` // the generation it is for: wire.MAJOR; checked in LoadConfig
 	Identity string  `toml:"identity"`
 	Signal   bool    `toml:"signal"`
 	Port     int     `toml:"port"`
@@ -58,6 +59,10 @@ func LoadConfig(path string) (*Config, error) {
 	content, readError := os.ReadFile(path)
 	if readError != nil {
 		return nil, readError
+	}
+	majorError := wire.CheckMajor(content)
+	if majorError != nil {
+		return nil, fmt.Errorf("%s: %w", path, majorError)
 	}
 	var config Config
 	decodeError := wire.DecodeTOML(content, &config)

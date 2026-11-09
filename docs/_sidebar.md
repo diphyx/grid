@@ -6,4 +6,5 @@
 - Reference
     - [Setups](/setups.md)
     - [Protocol](/protocol.md)
+    - [Versions](/versions.md)
     - [Agents](/AGENTS.md)

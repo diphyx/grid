@@ -4,7 +4,7 @@
 
 Follow the protocol below, then pass the test kit. Anything that passes works with every other grid hub and node.
 
-`grid/1` is the wire version: every release that speaks it works with every other. Releases are versioned on their own; a new protocol version comes only with a new major release. `grid version` prints both.
+`grid/2` is the wire version, one per generation: every grid 2 release works with every other, and with no other generation ([Versions](versions.md)). `grid version` prints both.
 
 This page gives the picture; [`spec/SPEC.md`](https://github.com/diphyx/grid/blob/HEAD/spec/SPEC.md) defines every byte, and [`spec/vectors.json`](https://github.com/diphyx/grid/blob/HEAD/spec/vectors.json) has sample bytes to check an implementation against.
 
@@ -73,7 +73,7 @@ Instead of an answer, any call can get a `reject` with a reason: `full` (no room
 | `{id, cancel}`              | stop a stream |
 | `{ping}` / `{pong}`         | keepalive     |
 
-- Everything goes over TCP port `9420`. Each connection starts with a Noise handshake (`Noise_IK_25519_ChaChaPoly_SHA256`, version `grid/1`) that proves both sides and encrypts the rest.
+- Everything goes over TCP port `9420`. Each connection starts with a Noise handshake (`Noise_IK_25519_ChaChaPoly_SHA256`, version `grid/2`) that proves both sides and encrypts the rest.
 - Each side accepts connections only from the IPs in its config, then checks the key.
 - Only the side that opened a connection makes calls on it. Several calls can run at once, told apart by `id`.
 - Files travel as tar streams that come out the same bytes every time, so a broken transfer resumes at an offset, and a `sha256` checks the whole.

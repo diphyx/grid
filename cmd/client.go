@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 func client(socket string) *http.Client {

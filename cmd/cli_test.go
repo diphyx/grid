@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // The CLI end to end: build `grid`, run a node and a hub as real processes, drive both with
@@ -115,7 +117,8 @@ func TestHubAndNode(t *testing.T) {
 	nodePort, hubPort := freePort(t), freePort(t)
 	nodeSock, hubSock := filepath.Join(dir, "n.sock"), filepath.Join(dir, "h.sock")
 
-	node := fmt.Sprintf(`identity = "%[1]s/node.key"
+	node := fmt.Sprintf(`grid = %[5]s
+identity = "%[1]s/node.key"
 port = %[2]d
 tags = ["kit"]
 signal = true
@@ -136,9 +139,10 @@ path = "%[1]s/ndata/history"
 [share]
 path = "%[1]s/ndata/share"
 limit = "64MB"
-`, dir, nodePort, nodeSock, hubPort) + strings.ReplaceAll(mustRead(t, filepath.Join(cmds, "node.toml")), "KIT", cmds)
+`, dir, nodePort, nodeSock, hubPort, wire.MAJOR) + strings.ReplaceAll(mustRead(t, filepath.Join(cmds, "node.toml")), "KIT", cmds)
 	os.WriteFile(filepath.Join(dir, "node.toml"), []byte(node), 0o644)
-	hub := fmt.Sprintf(`identity = "%[1]s/hub.key"
+	hub := fmt.Sprintf(`grid = %[5]s
+identity = "%[1]s/hub.key"
 signal = true
 port = %[2]d
 socket = %[3]q
@@ -155,7 +159,7 @@ ip = "127.0.0.1"
 port = %[4]d
 trust = "%[1]s/node.pub"
 share = true
-`, dir, hubPort, hubSock, nodePort)
+`, dir, hubPort, hubSock, nodePort, wire.MAJOR)
 	os.WriteFile(filepath.Join(dir, "hub.toml"), []byte(hub), 0o644)
 
 	os.MkdirAll(filepath.Join(dir, "job", "src"), 0o755)

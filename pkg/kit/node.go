@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // NodeTarget is a node under test. The node must trust Hub's public key

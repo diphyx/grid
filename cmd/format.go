@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/diphyx/grid/pkg/history"
+	"github.com/diphyx/grid/v2/pkg/history"
 )
 
 func ago(at time.Time) string {

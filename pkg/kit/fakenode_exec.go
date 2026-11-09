@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // emit adds an event; the caller holds job.mutex.

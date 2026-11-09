@@ -9,6 +9,7 @@ The hub never runs work itself. For each [job](job.md) it picks a node, pushes t
 The hub's config, `/etc/grid/hub.toml`, lists the nodes it may use:
 
 ```toml
+grid = 2                            # the generation it is for: grid version's major
 identity = "/etc/grid/hub.key"      # who it is: its private key
 
 [jobs]
@@ -27,20 +28,21 @@ port = 9500                         # if not 9420
 trust = "/etc/grid/gpu.pub"
 ```
 
-| Option      | Default              | Description                                                    |
-| ----------- | -------------------- | -------------------------------------------------------------- |
-| `identity`  | required             | Path to the hub's private key                                  |
-| `[[nodes]]` | at least one         | A node it may use: `tags`, `ip`, `trust`, `port`, and `share`  |
-| `signal`    | `false`              | Listen for the nodes' heartbeats; each node needs its own `ip` |
-| `port`      | `9420`               | The port it listens on, with `signal`                          |
-| `socket`    | `/run/grid/hub.sock` | The socket the CLI talks to                                    |
+| Option      | Default              | Description                                                                              |
+| ----------- | -------------------- | ---------------------------------------------------------------------------------------- |
+| `grid`      | required             | The grid generation the config is for, `2`: another is refused ([Versions](versions.md)) |
+| `identity`  | required             | Path to the hub's private key                                                            |
+| `[[nodes]]` | at least one         | A node it may use: `tags`, `ip`, `trust`, `port`, and `share`                            |
+| `signal`    | `false`              | Listen for the nodes' heartbeats; each node needs its own `ip`                           |
+| `port`      | `9420`               | The port it listens on, with `signal`                                                    |
+| `socket`    | `/run/grid/hub.sock` | The socket the CLI talks to                                                              |
 
 Its state is in two scopes, with the same keys as the node's:
 
-| Scope       | `path`, default             | `limit`, default                                       | `expires`, default                                                             |
-| ----------- | --------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `[jobs]`    | `/var/lib/grid/hub/jobs`    |                                                        | `"720h"`: drop a finished job, its files and inputs, after this; `"0"` = never |
-| `[history]` | `/var/lib/grid/hub/history` | `"100MB"`: past it, the oldest entries go; `"0"` = off | `"0"`: drop entries older than this                                            |
+| Scope       | `path`, default               | `limit`, default                                       | `expires`, default                                                             |
+| ----------- | ----------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `[jobs]`    | `/var/lib/grid/2/hub/jobs`    |                                                        | `"720h"`: drop a finished job, its files and inputs, after this; `"0"` = never |
+| `[history]` | `/var/lib/grid/2/hub/history` | `"100MB"`: past it, the oldest entries go; `"0"` = off | `"0"`: drop entries older than this                                            |
 
 - A node's `share` is a hint for placing jobs with a [share push](job.md#shared-input). The node's own word wins: its replies to pushes, and its heartbeats with `signal`. A change, or a node that says otherwise than the config, is in the history.
 - Under `[jobs] path`, `tars/` keeps every packed input once, for all the jobs that use it; it goes when no job uses it.
@@ -80,4 +82,4 @@ FROM ghcr.io/diphyx/grid-hub
 COPY hub.toml /etc/grid/hub.toml
 ```
 
-The image runs `grid hub run`, checks its health with `grid hub status`, and runs as the non-root user `grid` (uid `100`). Keep keys in `/etc/grid`, readable by that user, and mount a volume at `/var/lib/grid` for state: the defaults are under `/var/lib/grid/hub`.
+The image runs `grid hub run`, checks its health with `grid hub status`, and runs as the non-root user `grid` (uid `100`). Keep keys in `/etc/grid`, readable by that user, and mount a volume at `/var/lib/grid` for state: the defaults are under `/var/lib/grid/2/hub`.

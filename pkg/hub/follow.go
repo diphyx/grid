@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // follower tails the node job for the whole attempt, passes every event on into the hub

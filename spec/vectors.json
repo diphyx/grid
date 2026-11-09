@@ -1,5 +1,5 @@
 {
-  "prologue": "grid/1",
+  "prologue": "grid/2",
   "initiator": {
     "private": "G9v0BCxsJkRMorsBQJo83PLpOAe1TmqLCGA1795hpnE=",
     "public": "tFHToU1zMIbJctw3bZ+4j/vO+yShoaRwyPVIa/ONzi4=",
@@ -11,8 +11,8 @@
     "ephemeral": "712fd67c273a59dd5327def1a8a48b039854b60992bed431a5c81e961d2828bb"
   },
   "handshake": [
-    "0060c55e7e3bdbd123fc52c1451fd705a60888b8a39860adba05aef4f815335c9767162022c7621f25f54d635da3cb5b9f7fa6c2b8045efaca8e2d0b86b866cb07ccc80f0c7dd1673ec42fb1dea985d7f7c2d1c3cdaed38253f35a8bba5a2ea26aee",
-    "00304f329f6ba74d0d9e10dca9604b42567558e5ddeafa35124d4f1910f4802bfc3315688257b1d0f9b2d28a40dca491bdfe"
+    "0060c55e7e3bdbd123fc52c1451fd705a60888b8a39860adba05aef4f815335c9767162022c7621f25f54d635da3cb5b9f7fa6c2b8045efaca8e2d0b86b866cb07cc9aaf135b5612dbbb0adf796f674dc0139684121460b3f31ec7a9dc9dcb6adf1c",
+    "00304f329f6ba74d0d9e10dca9604b42567558e5ddeafa35124d4f1910f4802bfc3368027fc14460a1e63e02b7783cb0ce2e"
   ],
   "transport": [
     {

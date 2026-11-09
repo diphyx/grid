@@ -3,7 +3,7 @@ package hub_test
 import (
 	"fmt"
 
-	"github.com/diphyx/grid/pkg/hub"
+	"github.com/diphyx/grid/v2/pkg/hub"
 )
 
 // How to embed it in a Go program; compiled with the tests so it stays right.

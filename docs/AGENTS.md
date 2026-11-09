@@ -2,10 +2,11 @@
 
 > Single-file, end-to-end reference for AI coding agents setting up or using grid. Reading this once gives the full model: hub, node, keys, configs, job files, CLI, Docker, events, failures, setups, and the test kit.
 
-- **Module:** `github.com/diphyx/grid` (Go 1.27); one binary, `grid`
-- **Images:** `ghcr.io/diphyx/grid-hub`, `ghcr.io/diphyx/grid-node`; tags `latest`, `1.2.3`, `1.2`
+- **Module:** `github.com/diphyx/grid/v2` (Go 1.27); one binary, `grid`
+- **Images:** `ghcr.io/diphyx/grid-hub`, `ghcr.io/diphyx/grid-node`; tags `2` (the generation), `2.1`, `2.1.0`, `latest`
 - **Install:** `brew install diphyx/tap/grid`, or a binary from the GitHub releases (macOS, Linux, Windows; amd64, arm64); `grid version` prints it
-- **Protocol:** `grid/1`, port `9420`, `Noise_IK_25519_ChaChaPoly_SHA256`, CBOR; exact in `spec/SPEC.md`. Releases are versioned on their own; every release speaking `grid/1` interoperates, and a new protocol comes only with a new major release.
+- **Protocol:** `grid/2`, port `9420`, `Noise_IK_25519_ChaChaPoly_SHA256`, CBOR; exact in `spec/SPEC.md`.
+- **Versions:** the major is the generation (`docs/versions.md`). Minor and patch releases are drop-in. A new major is a fresh install: its configs say `grid = <major>`, its state is in `/var/lib/grid/<major>/`, its protocol is `grid/<major>`; nothing of another major is read or talked to.
 
 ---
 
@@ -52,6 +53,7 @@ grid key pub /etc/grid/hub.key
 ## 3. Node Config — `/etc/grid/node.toml`
 
 ```toml
+grid = 2                         # required: the generation, grid version's major
 identity = "/etc/grid/node.key"  # required
 tags = ["build"]                 # required
 signal = true                    # send beat + state changes to the hub; default false
@@ -63,17 +65,17 @@ trust = "/etc/grid/hub.pub"
 port = 9420                      # where the hub listens, with signal
 
 [jobs]
-path = "/var/lib/grid/node/jobs" # default
+path = "/var/lib/grid/2/node/jobs" # default
 limit = 4                        # jobs at once; default 1
 expires = "10m"                  # idle job cleanup; "0" = never (default)
 
 [history]                        # the event log: job, share, node, hub
-path = "/var/lib/grid/node/history"
+path = "/var/lib/grid/2/node/history"
 limit = "100MB"                  # default; "0" = off
 expires = "30d"                  # "0" = never (default)
 
 [share]                          # share pushes, kept for the jobs after
-path = "/var/lib/grid/node/share"
+path = "/var/lib/grid/2/node/share"
 limit = "10GB"                   # "0" = off (default)
 expires = "7d"                   # a share no job used this long goes; "0" = never (default)
 
@@ -85,16 +87,17 @@ timeout = "1h"                   # "0" = never
 ## 4. Hub Config — `/etc/grid/hub.toml`
 
 ```toml
+grid = 2                         # required: the generation, grid version's major
 identity = "/etc/grid/hub.key"   # required
 signal = true                    # listen for the nodes' beat and post; default false
 port = 9420                      # where it listens, with signal
 
 [jobs]
-path = "/var/lib/grid/hub/jobs"  # default; also the packed inputs, under tars/
+path = "/var/lib/grid/2/hub/jobs" # default; also the packed inputs, under tars/
 expires = "30d"                  # finished jobs and files; default "30d"; "0" = never
 
 [history]                        # the event log: job, node, hub
-path = "/var/lib/grid/hub/history"
+path = "/var/lib/grid/2/hub/history"
 limit = "100MB"                  # default; "0" = off
 
 [[nodes]]                        # at least one
@@ -111,6 +114,7 @@ share = true                     # a hint: its share is on; default false
 - Durations are **strings**: `"10m"`, `"30d"`, `"0"`. A bare number (`expires = 600`) is rejected.
 - Sizes are **strings** with a unit, binary: `"512MB"`, `"10GB"` (2³⁰), `"0"`. A bare number is rejected.
 - Unknown keys are errors, named with their line: `unknown keys: retry (line 2)`.
+- A config without `grid = 2`, or for another generation, is refused before any other check: `config is for grid 1, this is grid 2`.
 
 ## 5. Job File — any name, TOML
 
@@ -170,7 +174,7 @@ grid hub kill <id> | drop <id>
 # test kit
 grid test node | hub | vectors
 
-# this binary's version and protocol: grid v0.1.0 (protocol grid/1)
+# this binary's version and protocol: grid v2.0.0 (protocol grid/2)
 grid version
 ```
 
@@ -183,7 +187,7 @@ FROM ghcr.io/diphyx/grid-node
 COPY cmds/ /opt/cmds/
 ```
 
-- Config and keys in `/etc/grid`; state in `/var/lib/grid` (`node/` and `hub/` under it); runs as uid `100` (`grid`): `chown 100` mounted private keys.
+- Config and keys in `/etc/grid`; state in `/var/lib/grid` (`2/node/` and `2/hub/` under it); runs as uid `100` (`grid`): `chown 100` mounted private keys.
 - Each container has its own IP, so hub and node both use `9420`; in the configs, use the container IPs.
 - Health checks: `grid node status`, `grid hub status`.
 

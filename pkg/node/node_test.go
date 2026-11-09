@@ -16,9 +16,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/diphyx/grid/pkg/history"
-	"github.com/diphyx/grid/pkg/kit"
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/history"
+	"github.com/diphyx/grid/v2/pkg/kit"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 func freePort(t *testing.T) int {
@@ -47,7 +47,8 @@ func testNodeWith(t *testing.T, data, expires string) (*Node, wire.Keypair, stri
 	cmds, _ := filepath.Abs("../kit/cmds")
 	sigPort := freePort(t)
 	kitCmds, _ := os.ReadFile(filepath.Join(cmds, "node.toml"))
-	cfg := fmt.Sprintf(`identity = %q
+	cfg := fmt.Sprintf(`grid = %s
+identity = %q
 port = %d
 tags = ["kit"]
 signal = true
@@ -69,7 +70,7 @@ expires = "30d"
 [share]
 path = %q
 limit = "64MB"
-`, priv, freePort(t), sigPort, hub.Public.String(), filepath.Join(data, "jobs"), expires, filepath.Join(data, "history"), filepath.Join(data, "share")) + strings.ReplaceAll(string(kitCmds), "KIT", cmds)
+`, wire.MAJOR, priv, freePort(t), sigPort, hub.Public.String(), filepath.Join(data, "jobs"), expires, filepath.Join(data, "history"), filepath.Join(data, "share")) + strings.ReplaceAll(string(kitCmds), "KIT", cmds)
 	path := filepath.Join(dir, "node.toml")
 	os.WriteFile(path, []byte(cfg), 0o644)
 	c, err := LoadConfig(path)

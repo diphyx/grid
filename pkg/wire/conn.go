@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	PROLOGUE          = "grid/1" // §1
-	DEFAULT_PORT      = 9420     // §1
+	PROLOGUE          = "grid/" + MAJOR // §1: one protocol per generation
+	DEFAULT_PORT      = 9420            // §1
 	HANDSHAKE_TIMEOUT = 10 * time.Second
 	PING_AFTER        = 15 * time.Second // §4
 	DEAD_AFTER        = 30 * time.Second // §4

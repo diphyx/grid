@@ -9,6 +9,7 @@ A node works for one hub. It runs each job in its own space, using only the cmds
 The node's config, `/etc/grid/node.toml`, names its hub and the cmds it offers:
 
 ```toml
+grid = 2                            # the generation it is for: grid version's major
 identity = "/etc/grid/node.key"     # who it is: its private key
 tags = ["build"]                    # the kinds of work it does
 
@@ -35,22 +36,23 @@ timeout = "1h"
 exec = ["/opt/cmds/test"]
 ```
 
-| Option          | Default  | Description                                                      |
-| --------------- | -------- | ---------------------------------------------------------------- |
-| `identity`      | required | Path to the node's private key                                   |
-| `tags`          | required | The kinds of work it does                                        |
-| `[hub]`         | required | The hub allowed to send it jobs: `ip`, `trust`, and `port`       |
-| `[cmds.<name>]` |          | A cmd it offers: `exec` is the command line, `timeout` its limit |
-| `signal`        | `false`  | Connect back to the hub to send heartbeats and step updates      |
-| `port`          | `9420`   | The port it listens on                                           |
+| Option          | Default  | Description                                                                              |
+| --------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `grid`          | required | The grid generation the config is for, `2`: another is refused ([Versions](versions.md)) |
+| `identity`      | required | Path to the node's private key                                                           |
+| `tags`          | required | The kinds of work it does                                                                |
+| `[hub]`         | required | The hub allowed to send it jobs: `ip`, `trust`, and `port`                               |
+| `[cmds.<name>]` |          | A cmd it offers: `exec` is the command line, `timeout` its limit                         |
+| `signal`        | `false`  | Connect back to the hub to send heartbeats and step updates                              |
+| `port`          | `9420`   | The port it listens on                                                                   |
 
 Its state is in three scopes, each with the same keys:
 
-| Scope       | `path`, default              | `limit`, default                                                | `expires`, default                                                 |
-| ----------- | ---------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `[jobs]`    | `/var/lib/grid/node/jobs`    | `1`: jobs at once; when all are taken, new jobs wait on the hub | `"0"`: delete a job idle this long; a running cmd is never cut off |
-| `[history]` | `/var/lib/grid/node/history` | `"100MB"`: past it, the oldest entries go; `"0"` = off          | `"0"`: drop entries older than this                                |
-| `[share]`   | `/var/lib/grid/node/share`   | `"0"`: the share's size; `"0"` = off                            | `"0"`: drop a share no job used this long                          |
+| Scope       | `path`, default                | `limit`, default                                                | `expires`, default                                                 |
+| ----------- | ------------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `[jobs]`    | `/var/lib/grid/2/node/jobs`    | `1`: jobs at once; when all are taken, new jobs wait on the hub | `"0"`: delete a job idle this long; a running cmd is never cut off |
+| `[history]` | `/var/lib/grid/2/node/history` | `"100MB"`: past it, the oldest entries go; `"0"` = off          | `"0"`: drop entries older than this                                |
+| `[share]`   | `/var/lib/grid/2/node/share`   | `"0"`: the share's size; `"0"` = off                            | `"0"`: drop a share no job used this long                          |
 
 - `"0"` as `expires` is never. Durations are strings, like `"10m"`, `"720h"`, or `"30d"`.
 - Sizes are strings with a unit, `B`, `KB`, `MB`, `GB`, or `TB`, in binary: `1GB` is 2³⁰ bytes. A bare number is an error.
@@ -195,4 +197,4 @@ COPY cmds/ /opt/cmds/
 COPY node.toml /etc/grid/node.toml
 ```
 
-The image runs `grid node run`, checks its health with `grid node status`, and runs as the non-root user `grid` (uid `100`), which the cmds run as too. Keep keys in `/etc/grid`, readable by that user, and mount a volume at `/var/lib/grid` for state: the defaults are under `/var/lib/grid/node`.
+The image runs `grid node run`, checks its health with `grid node status`, and runs as the non-root user `grid` (uid `100`), which the cmds run as too. Keep keys in `/etc/grid`, readable by that user, and mount a volume at `/var/lib/grid` for state: the defaults are under `/var/lib/grid/2/node`.

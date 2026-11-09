@@ -7,7 +7,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // Vectors are fixed bytes any implementation can check its encoder against.

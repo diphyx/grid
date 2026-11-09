@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // push receives a tar into the space (§10). The node owns the offset: the partial stream lives

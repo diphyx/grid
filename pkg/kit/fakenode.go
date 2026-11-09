@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 // FakeNode is an in-memory node. It runs the kit cmds (kit/cmds) without a shell,

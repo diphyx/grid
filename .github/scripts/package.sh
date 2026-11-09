@@ -21,7 +21,7 @@ for target in "${targets[@]}"; do
     fi
     mkdir -p "dist/$name"
     CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
-        -ldflags "-s -w -X github.com/diphyx/grid/cmd.VERSION=$tag" -o "dist/$name/$binary" .
+        -ldflags "-s -w -X github.com/diphyx/grid/v2/cmd.VERSION=$tag" -o "dist/$name/$binary" .
     cp README.md "dist/$name/"
     if [[ "$os" == "windows" ]]; then
         (cd dist && zip -qr "$name.zip" "$name")

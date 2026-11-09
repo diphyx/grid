@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diphyx/grid/pkg/kit"
-	"github.com/diphyx/grid/pkg/node"
-	"github.com/diphyx/grid/pkg/wire"
+	"github.com/diphyx/grid/v2/pkg/kit"
+	"github.com/diphyx/grid/v2/pkg/node"
+	"github.com/diphyx/grid/v2/pkg/wire"
 )
 
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -50,7 +50,8 @@ func realNode(t *testing.T, hubKey wire.Key, signalPort int) (*node.Node, wire.K
 		signal = "true"
 	}
 	kitCmds, _ := os.ReadFile(filepath.Join(cmds, "node.toml"))
-	cfg := fmt.Sprintf(`identity = %q
+	cfg := fmt.Sprintf(`grid = %s
+identity = %q
 port = %d
 tags = ["kit"]
 signal = %s
@@ -71,7 +72,7 @@ path = %q
 [share]
 path = %q
 limit = "64MB"
-`, writeKey(t, dir, "node.key", nk.Private), port, signal, filepath.Join(dir, "s"), signalPort, hubKey.String(),
+`, wire.MAJOR, writeKey(t, dir, "node.key", nk.Private), port, signal, filepath.Join(dir, "s"), signalPort, hubKey.String(),
 		filepath.Join(dir, "data", "jobs"), filepath.Join(dir, "data", "history"), filepath.Join(dir, "data", "share")) + strings.ReplaceAll(string(kitCmds), "KIT", cmds)
 	path := filepath.Join(dir, "node.toml")
 	os.WriteFile(path, []byte(cfg), 0o644)
