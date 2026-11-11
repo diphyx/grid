@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+<defs>
+<pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse" x="12.0" y="35.0"><path d="M40 0H0V40" fill="none" stroke="#e2e8f0" stroke-width="1" /></pattern>
+<radialGradient id="glow" cx="892.0" cy="315.0" r="520" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" /><stop offset=".55" stop-color="#fff" stop-opacity=".55" /><stop offset="1" stop-color="#fff" stop-opacity="0" /></radialGradient>
+<mask id="fade"><rect width="1200" height="630" fill="url(#glow)" /></mask>
+</defs>
+<rect width="1200" height="630" fill="#f8fafc" />
+<rect width="1200" height="630" fill="url(#grid)" mask="url(#fade)" />
+<!-- text -->
+<text x="81.6" y="288.2" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="168" font-weight="700" fill="#34495e" letter-spacing="-3">GRID</text>
+<text x="93.9" y="342.6" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="28.55" font-weight="400" fill="#7f8c8d" xml:space="preserve"><tspan font-weight="700" fill="#7f8c8d">G</tspan>eneric <tspan font-weight="700" fill="#7f8c8d">R</tspan>untime <tspan font-weight="700" fill="#7f8c8d">I</tspan>ntent-<tspan font-weight="700" fill="#7f8c8d">D</tspan>riven</text>
+<g transform="translate(88.0 397.9)" fill="#42b883"><rect x="3" y="3" width="18" height="18" rx="5" /><path d="m8.2 12.2 2.6 2.6 5-5.2" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></g>
+<text x="125.4" y="419.2" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#34495e">Jobs, not shells, on your machines.</text>
+<g transform="translate(88.0 440.5)" fill="#42b883"><rect x="3" y="3" width="18" height="18" rx="5" /><path d="m8.2 12.2 2.6 2.6 5-5.2" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></g>
+<text x="124.0" y="461.7" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="26" font-weight="400" fill="#34495e">Files in, results out.</text>
+<!-- hub to nodes -->
+<g transform="translate(-18.0 6.0)">
+<g fill="none" stroke="#34495e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<path d="M850 315H889Q905 315 905 299V191Q905 175 921 175H960" /><path d="M850 315H960" /><path d="M850 315H889Q905 315 905 331V439Q905 455 921 455H960" />
+</g>
+<rect x="690" y="215" width="160" height="200" rx="22" fill="#fff" stroke="#34495e" stroke-width="2.5" />
+<rect x="708" y="203" width="52" height="24" rx="12" fill="#fff" stroke="#d5dbe3" stroke-width="1.5" />
+<text x="734.0" y="220.0" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#7f8c8d" text-anchor="middle">Hub</text>
+<g fill="none" stroke="#42b883" stroke-width="1.5" stroke-dasharray="4 3" opacity=".7"><rect x="718" y="262" width="26" height="26" rx="5" /><rect x="757" y="262" width="26" height="26" rx="5" /><rect x="796" y="262" width="26" height="26" rx="5" /></g>
+<rect x="718" y="312" width="104" height="10" rx="5" fill="#e2e8f0" /><rect x="718" y="338" width="72" height="10" rx="5" fill="#e2e8f0" /><rect x="718" y="364" width="88" height="10" rx="5" fill="#e2e8f0" />
+<rect x="960" y="130" width="170" height="90" rx="22" fill="#fff" stroke="#34495e" stroke-width="2.5" /><rect x="976" y="118" width="58" height="24" rx="12" fill="#fff" stroke="#d5dbe3" stroke-width="1.5" /><text x="1005.0" y="135.0" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#7f8c8d" text-anchor="middle">Node</text><rect x="984" y="163" width="26" height="26" rx="5" fill="#42b883" /><rect x="1018" y="163" width="26" height="26" rx="5" fill="#42b883" /><rect x="1052" y="163" width="26" height="26" rx="5" fill="#fff" stroke="#42b883" stroke-width="1.5" /><rect x="960" y="270" width="170" height="90" rx="22" fill="#fff" stroke="#34495e" stroke-width="2.5" /><rect x="976" y="258" width="58" height="24" rx="12" fill="#fff" stroke="#d5dbe3" stroke-width="1.5" /><text x="1005.0" y="275.0" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#7f8c8d" text-anchor="middle">Node</text><rect x="984" y="303" width="26" height="26" rx="5" fill="#42b883" /><rect x="1018" y="303" width="26" height="26" rx="5" fill="#fff" stroke="#42b883" stroke-width="1.5" /><rect x="1052" y="303" width="26" height="26" rx="5" fill="#fff" stroke="#42b883" stroke-width="1.5" /><rect x="960" y="410" width="170" height="90" rx="22" fill="#fff" stroke="#34495e" stroke-width="2.5" /><rect x="976" y="398" width="58" height="24" rx="12" fill="#fff" stroke="#d5dbe3" stroke-width="1.5" /><text x="1005.0" y="415.0" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#7f8c8d" text-anchor="middle">Node</text><rect x="984" y="443" width="26" height="26" rx="5" fill="#42b883" /><rect x="1018" y="443" width="26" height="26" rx="5" fill="#42b883" /><rect x="1052" y="443" width="26" height="26" rx="5" fill="#42b883" />
+</g>
+</svg>
