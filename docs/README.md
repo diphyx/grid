@@ -1,5 +1,7 @@
 # grid
 
+**Generic Runtime Intent-Driven**
+
 > Send jobs to machines you control, and get the results back
 
 grid has two sides, talking over one protocol:

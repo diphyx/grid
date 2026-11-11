@@ -3,8 +3,8 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>grid · Fixed jobs on isolated machines</title>
-        <meta name="description" content="Send jobs to machines you control and get the results back: one TCP port, encrypted with a key pair on each side" />
+        <title>grid · Generic Runtime Intent-Driven</title>
+        <meta name="description" content="grid, Generic Runtime Intent-Driven: send jobs to machines you control and get the results back: one TCP port, encrypted with a key pair on each side" />
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css" />
         <style>
             :root {
@@ -54,12 +54,8 @@
                 line-height: 1.4;
                 color: #34495e;
             }
-            .brand-meta {
-                display: block;
-                margin-top: 8px;
-                font-size: 0.75rem;
-                font-weight: 400;
-                color: #7f8c8d;
+            .brand-tag b {
+                font-weight: 800;
             }
             .markdown-section {
                 max-width: 860px;
@@ -77,7 +73,7 @@
         <div id="app"></div>
         <script>
             window.$docsify = {
-                name: '<span class="brand-name">grid</span><span class="brand-tag">Fixed jobs on isolated machines</span><span class="brand-meta">secure · lightweight · portable</span>',
+                name: '<span class="brand-name">grid</span><span class="brand-tag"><b>G</b>eneric <b>R</b>untime <b>I</b>ntent-<b>D</b>riven</span>',
                 nameLink: "#/",
                 autoHeader: true,
                 loadSidebar: true,
@@ -89,7 +85,7 @@
                         hook.doneEach(function () {
                             var heading = document.querySelector(".markdown-section h1");
                             var page = heading ? heading.textContent.trim() : "";
-                            document.title = page && page !== "grid" ? page + " · grid" : "grid · Fixed jobs on isolated machines";
+                            document.title = page && page !== "grid" ? page + " · grid" : "grid · Generic Runtime Intent-Driven";
 
                             // mark the page's link active, also on section links (?id=)
                             var path = location.hash.split("?")[0] || "#/";

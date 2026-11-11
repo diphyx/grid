@@ -2,6 +2,7 @@
 
 > Single-file, end-to-end reference for AI coding agents setting up or using grid. Reading this once gives the full model: hub, node, keys, configs, job files, CLI, Docker, events, failures, deploy, and the test kit.
 
+- **Name:** grid, short for Generic Runtime Intent-Driven
 - **Module:** `github.com/diphyx/grid/v2` (Go 1.27); one binary, `grid`
 - **Images:** `ghcr.io/diphyx/grid-hub`, `ghcr.io/diphyx/grid-node`; tags `2` (the generation), `2.1`, `2.1.0`, `latest`
 - **Install:** `brew install diphyx/tap/grid`, or a binary from the GitHub releases (macOS, Linux, Windows; amd64, arm64); `grid version` prints it

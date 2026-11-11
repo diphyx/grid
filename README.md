@@ -1,5 +1,7 @@
 # grid
 
+**Generic Runtime Intent-Driven**
+
 Send jobs to machines you control, and get the results back.
 
 **Docs: [diphyx.github.io/grid](https://diphyx.github.io/grid/)** · [Overview](docs/README.md) · [Get Started](docs/start.md) · [Job](docs/job.md) · [Hub](docs/hub.md) · [Node](docs/node.md) · [Deploy](docs/deploy.md) · [Protocol](docs/protocol.md) · [Versions](docs/versions.md) · [Agents](docs/AGENTS.md)
